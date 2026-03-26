@@ -679,7 +679,7 @@ export default function IdCardReaderPage() {
             for (const df of autoFormatDateFields) {
               const v = parsed[df];
               if (typeof v === "string" && /^\d{6}$/.test(v)) {
-                (parsed as Record<string, string>)[df] = formatPPDate(v);
+                (parsed as unknown as Record<string, string>)[df] = formatPPDate(v);
               }
             }
           } else {
