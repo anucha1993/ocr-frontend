@@ -11,6 +11,10 @@ import {
   Eye,
   X,
   ScanSearch,
+  Save,
+  Lock,
+  Globe,
+  Tag,
 } from "lucide-react";
 import { apiFetch, apiUploadStream, API_BASE } from "@/lib/api";
 
@@ -36,6 +40,14 @@ interface OcrResultItem {
   created_at: string;
 }
 
+interface SaveForm {
+  batch_name: string;
+  label: string;
+  note: string;
+  visibility: "private" | "public";
+  selectedIds: Set<number>;
+}
+
 export default function OcrProcessPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
@@ -58,6 +70,17 @@ export default function OcrProcessPage() {
     totalPages: number;
     phase: "uploading" | "ocr" | "extracting" | "done";
   } | null>(null);
+  // Save to labours
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveForm, setSaveForm] = useState<SaveForm>({
+    batch_name: "",
+    label: "",
+    note: "",
+    visibility: "private",
+    selectedIds: new Set(),
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -157,6 +180,12 @@ export default function OcrProcessPage() {
             setAutoDetected((ev.auto_detected as boolean) || false);
             setFiles([]);
             setProgress((p) => ({ ...p!, phase: "done" }));
+            // Pre-fill save form
+            setSaveForm((f) => ({
+              ...f,
+              batch_name: `OCR ${new Date().toLocaleDateString("th-TH")}`,
+              selectedIds: new Set<number>(),
+            }));
             break;
         }
       });
@@ -168,8 +197,38 @@ export default function OcrProcessPage() {
     }
   };
 
-  const handleExport = () => {
-    if (!batchId) return;
+  const handleSaveLabours = async () => {
+    if (!batchId || saving) return;
+    setSaving(true);
+    setSaveSuccess(null);
+    try {
+      const completedResults = results.filter((r) => r.status === "completed");
+      const ids = saveForm.selectedIds.size > 0
+        ? Array.from(saveForm.selectedIds)
+        : completedResults.map((r) => r.id);
+
+      const res = await apiFetch(`/ocr/batch/${batchId}/save-labours`, {
+        method: "POST",
+        body: JSON.stringify({
+          batch_name: saveForm.batch_name || `OCR ${new Date().toLocaleDateString("th-TH")}`,
+          label: saveForm.label || undefined,
+          note: saveForm.note || undefined,
+          visibility: saveForm.visibility,
+          result_ids: ids,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "บันทึกไม่สำเร็จ");
+      setSaveSuccess(data.message);
+      setShowSaveModal(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExport = () => {    if (!batchId) return;
     const token = localStorage.getItem("token");
     // Stream download via direct fetch
     fetch(`${API_BASE}/ocr/batch/${batchId}/export`, {
@@ -411,13 +470,28 @@ export default function OcrProcessPage() {
               </p>
             </div>
             {completedCount > 0 && !processing && (
-              <button
-                onClick={handleExport}
-                className="flex items-center gap-2 px-4 py-2 bg-success/10 text-success text-sm font-medium rounded-lg hover:bg-success/20 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Export Excel
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSaveForm((f) => ({
+                      ...f,
+                      selectedIds: new Set(results.filter((r) => r.status === "completed").map((r) => r.id)),
+                    }));
+                    setShowSaveModal(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary text-sm font-medium rounded-lg hover:bg-primary/20 transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  บันทึกข้อมูลแรงงาน
+                </button>
+                <button
+                  onClick={handleExport}
+                  className="flex items-center gap-2 px-4 py-2 bg-success/10 text-success text-sm font-medium rounded-lg hover:bg-success/20 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Excel
+                </button>
+              </div>
             )}
           </div>
 
@@ -640,6 +714,181 @@ export default function OcrProcessPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Success Banner */}
+      {saveSuccess && (
+        <div className="bg-success/10 border border-success/20 text-success rounded-xl px-4 py-3 text-sm flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 shrink-0" />
+          {saveSuccess}
+          <button onClick={() => setSaveSuccess(null)} className="ml-auto p-1 hover:bg-success/20 rounded">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Save to Labours Modal */}
+      {showSaveModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setShowSaveModal(false)}
+        >
+          <div
+            className="bg-card w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Save className="w-5 h-5 text-primary" />
+                บันทึกข้อมูลแรงงาน
+              </h3>
+              <button onClick={() => setShowSaveModal(false)} className="p-2 hover:bg-background rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+              {/* batch_name */}
+              <div>
+                <label className="text-sm font-medium">ชื่อกลุ่ม <span className="text-danger">*</span></label>
+                <input
+                  value={saveForm.batch_name}
+                  onChange={(e) => setSaveForm((f) => ({ ...f, batch_name: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:border-primary"
+                  placeholder="เช่น OCR Batch มีนาคม 2026"
+                />
+              </div>
+
+              {/* label */}
+              <div>
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Tag className="w-3.5 h-3.5" /> ป้ายกำกับ
+                </label>
+                <input
+                  value={saveForm.label}
+                  onChange={(e) => setSaveForm((f) => ({ ...f, label: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:border-primary"
+                  placeholder="เช่น พนักงานโรงงาน, กลุ่ม A"
+                />
+              </div>
+
+              {/* note */}
+              <div>
+                <label className="text-sm font-medium">หมายเหตุ</label>
+                <textarea
+                  value={saveForm.note}
+                  onChange={(e) => setSaveForm((f) => ({ ...f, note: e.target.value }))}
+                  rows={2}
+                  className="mt-1 w-full px-3 py-2 bg-background border border-border rounded-lg text-sm resize-none focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* visibility */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">สิทธิ์การมองเห็น</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setSaveForm((f) => ({ ...f, visibility: "private" }))}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium transition-colors ${
+                      saveForm.visibility === "private"
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "border-border hover:bg-background"
+                    }`}
+                  >
+                    <Lock className="w-4 h-4" /> เฉพาะฉัน
+                  </button>
+                  <button
+                    onClick={() => setSaveForm((f) => ({ ...f, visibility: "public" }))}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium transition-colors ${
+                      saveForm.visibility === "public"
+                        ? "bg-success/10 border-success text-success"
+                        : "border-border hover:bg-background"
+                    }`}
+                  >
+                    <Globe className="w-4 h-4" /> ทุกคนในระบบ
+                  </button>
+                </div>
+              </div>
+
+              {/* result selection */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium">
+                    เลือกรายการที่จะบันทึก ({saveForm.selectedIds.size}/{results.filter((r) => r.status === "completed").length})
+                  </label>
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => {
+                      const all = results.filter((r) => r.status === "completed").map((r) => r.id);
+                      setSaveForm((f) => ({
+                        ...f,
+                        selectedIds:
+                          f.selectedIds.size === all.length ? new Set() : new Set(all),
+                      }));
+                    }}
+                  >
+                    {saveForm.selectedIds.size === results.filter((r) => r.status === "completed").length
+                      ? "ยกเลิกทั้งหมด"
+                      : "เลือกทั้งหมด"}
+                  </button>
+                </div>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {results
+                    .filter((r) => r.status === "completed")
+                    .map((r) => (
+                      <label
+                        key={r.id}
+                        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-background cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={saveForm.selectedIds.has(r.id)}
+                          onChange={(e) =>
+                            setSaveForm((f) => {
+                              const s = new Set(f.selectedIds);
+                              if (e.target.checked) { s.add(r.id); } else { s.delete(r.id); }
+                              return { ...f, selectedIds: s };
+                            })
+                          }
+                          className="w-4 h-4 accent-primary"
+                        />
+                        <span className="text-sm truncate">{r.original_filename}</span>
+                      </label>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex gap-3 px-6 py-4 border-t border-border">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="flex-1 px-4 py-2 border border-border rounded-lg text-sm hover:bg-background"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleSaveLabours}
+                disabled={saving || !saveForm.batch_name || saveForm.selectedIds.size === 0}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    บันทึก {saveForm.selectedIds.size} รายการ
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

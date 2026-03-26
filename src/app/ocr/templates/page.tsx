@@ -24,10 +24,32 @@ interface DetectedPair {
   value: string;
 }
 
+type TransformType = "remove_spaces" | "uppercase" | "lowercase" | "digits_only" | "alphanumeric";
+
+const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
+  { value: "remove_spaces", label: "ตัดวรรค" },
+  { value: "uppercase", label: "พิมพ์ใหญ่" },
+  { value: "lowercase", label: "พิมพ์เล็ก" },
+  { value: "digits_only", label: "ตัวเลขเท่านั้น" },
+  { value: "alphanumeric", label: "ตัวอักษร+เลข" },
+];
+
+const FORMAT_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "ไม่แปลง" },
+  { value: "date:DD/MM/YYYY", label: "วันที่ DD/MM/YYYY (ค.ศ.)" },
+  { value: "date:YYYY-MM-DD", label: "วันที่ YYYY-MM-DD (ค.ศ.)" },
+  { value: "date:DD/MM/YYYY+543", label: "วันที่ DD/MM/YYYY (พ.ศ.)" },
+  { value: "date:DD MON YYYY", label: "วันที่ DD MON YYYY" },
+  { value: "date:DD MON YYYY+543", label: "วันที่ DD MON YYYY (พ.ศ.)" },
+  { value: "date:DD เดือนไทย YYYY+543", label: "วันที่ DD เดือนไทย พ.ศ." },
+];
+
 interface MappingRow {
-  sourceKey: string; // OCR-detected key (left column)
-  targetField: string; // output field name (right column)
+  sourceKey: string;
+  targetField: string;
   extractionMode: "auto" | "same_line" | "next_line";
+  transform: TransformType[];
+  format: string;
 }
 
 interface FieldDef {
@@ -36,6 +58,8 @@ interface FieldDef {
   keywords: string[];
   regex: string | null;
   extraction_mode: "auto" | "same_line" | "next_line";
+  transform?: TransformType[];
+  format?: string;
 }
 
 interface LandmarkDef {
@@ -141,6 +165,8 @@ export default function OcrTemplatesPage() {
       sourceKey: f.keywords?.[0] || f.label,
       targetField: f.key,
       extractionMode: f.extraction_mode || "auto",
+      transform: f.transform || [],
+      format: f.format || "",
     }));
     setMappings(rows);
     setLandmarks(t.detection_landmarks ? t.detection_landmarks.map((l) => ({ ...l })) : []);
@@ -198,6 +224,8 @@ export default function OcrTemplatesPage() {
             sourceKey: p.key,
             targetField: toSnakeCase(p.key),
             extractionMode: "auto" as const,
+            transform: [] as TransformType[],
+            format: "",
           }))
         );
       }
@@ -211,7 +239,7 @@ export default function OcrTemplatesPage() {
   /* ── Mapping row operations ─────────────────── */
 
   const addMappingRow = () => {
-    setMappings((prev) => [...prev, { sourceKey: "", targetField: "", extractionMode: "auto" }]);
+    setMappings((prev) => [...prev, { sourceKey: "", targetField: "", extractionMode: "auto", transform: [], format: "" }]);
   };
 
   const removeMappingRow = (index: number) => {
@@ -231,7 +259,7 @@ export default function OcrTemplatesPage() {
     if (mappings.some((m) => m.sourceKey === pair.key)) return;
     setMappings((prev) => [
       ...prev,
-      { sourceKey: pair.key, targetField: toSnakeCase(pair.key), extractionMode: "auto" },
+      { sourceKey: pair.key, targetField: toSnakeCase(pair.key), extractionMode: "auto", transform: [], format: "" },
     ]);
   };
 
@@ -260,12 +288,14 @@ export default function OcrTemplatesPage() {
     setSuccess(null);
 
     // Convert mapping rows to field definitions
-    const fields: FieldDef[] = validMappings.map((m) => ({
+    const fields = validMappings.map((m) => ({
       key: m.targetField,
       label: m.sourceKey,
       keywords: [m.sourceKey],
       regex: null,
       extraction_mode: m.extractionMode,
+      ...(m.transform.length > 0 ? { transform: m.transform } : {}),
+      ...(m.format ? { format: m.format } : {}),
     }));
 
     const body = {
@@ -636,8 +666,10 @@ export default function OcrTemplatesPage() {
                       mappings.map((row, i) => (
                         <div
                           key={i}
-                          className="grid grid-cols-[1fr_40px_1fr_120px_40px] gap-2 items-center"
+                          className="border border-border rounded-lg p-2 space-y-2 bg-background/30"
                         >
+                          {/* Row 1: key → field, mode, remove */}
+                          <div className="grid grid-cols-[1fr_40px_1fr_120px_40px] gap-2 items-center">
                           {/* Source key with dropdown */}
                           <div className="relative">
                             <input
@@ -701,6 +733,79 @@ export default function OcrTemplatesPage() {
                             >
                               <Minus className="w-4 h-4" />
                             </button>
+                          </div>
+                          </div>
+
+                          {/* Row 2: Transform + Format (optional row, shown inline) */}
+                          <div className="flex items-start gap-3 pl-1">
+                            {/* Transform */}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted font-medium shrink-0">แปลงค่า:</span>
+                                <select
+                                  value=""
+                                  onChange={(e) => {
+                                    const val = e.target.value as TransformType;
+                                    if (!val) return;
+                                    setMappings((prev) => {
+                                      const updated = [...prev];
+                                      const cur = updated[i].transform || [];
+                                      if (!cur.includes(val)) {
+                                        updated[i] = { ...updated[i], transform: [...cur, val] };
+                                      }
+                                      return updated;
+                                    });
+                                  }}
+                                  className="px-1.5 py-1 bg-background border border-border rounded text-[11px]"
+                                >
+                                  <option value="">{row.transform.length > 0 ? "เพิ่ม..." : "ไม่แปลง"}</option>
+                                  {TRANSFORM_OPTIONS.filter((t) => !row.transform.includes(t.value)).map((t) => (
+                                    <option key={t.value} value={t.value}>{t.label}</option>
+                                  ))}
+                                </select>
+                                {row.transform.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {row.transform.map((t) => (
+                                      <span key={t} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-medium">
+                                        {TRANSFORM_OPTIONS.find((o) => o.value === t)?.label}
+                                        <button
+                                          onClick={() => {
+                                            setMappings((prev) => {
+                                              const updated = [...prev];
+                                              updated[i] = { ...updated[i], transform: updated[i].transform.filter((x) => x !== t) };
+                                              return updated;
+                                            });
+                                          }}
+                                          className="ml-0.5 hover:text-danger"
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Format */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] text-muted font-medium">รูปแบบ:</span>
+                              <select
+                                value={row.format}
+                                onChange={(e) => {
+                                  setMappings((prev) => {
+                                    const updated = [...prev];
+                                    updated[i] = { ...updated[i], format: e.target.value };
+                                    return updated;
+                                  });
+                                }}
+                                className="px-1.5 py-1 bg-background border border-border rounded text-[11px]"
+                              >
+                                {FORMAT_OPTIONS.map((f) => (
+                                  <option key={f.value} value={f.value}>{f.label}</option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </div>
                       ))
