@@ -15,6 +15,7 @@ import {
   Lock,
   Globe,
   Tag,
+  ClipboardCopy,
 } from "lucide-react";
 import { apiFetch, apiUploadStream, API_BASE } from "@/lib/api";
 
@@ -58,8 +59,7 @@ export default function OcrProcessPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewingResult, setViewingResult] = useState<OcrResultItem | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [showRawText, setShowRawText] = useState(false);
-  const [showNullFields, setShowNullFields] = useState(false);
+  const [showRawText, setShowRawText] = useState<"mapped" | "raw" | false>(false);
   const [templateUsed, setTemplateUsed] = useState<string | null>(null);
   const [autoDetected, setAutoDetected] = useState(false);
   const [progress, setProgress] = useState<{
@@ -120,6 +120,10 @@ export default function OcrProcessPage() {
 
   const handleProcess = async () => {
     if (files.length === 0) return;
+    if (!selectedMappingId) {
+      setError("กรุณาเลือกแม่แบบก่อนเริ่มสแกน");
+      return;
+    }
     setProcessing(true);
     setError(null);
     setResults([]);
@@ -285,9 +289,9 @@ export default function OcrProcessPage() {
             <select
               value={selectedMappingId}
               onChange={(e) => setSelectedMappingId(e.target.value)}
-              className="px-3 py-2 bg-background border border-border rounded-lg text-sm"
+              className={`px-3 py-2 bg-background border rounded-lg text-sm ${!selectedMappingId ? 'border-destructive text-muted' : 'border-border'}`}
             >
-              <option value="">ตรวจจับแม่แบบอัตโนมัติ</option>
+              <option value="" disabled>— เลือกแม่แบบ —</option>
               {fieldMappings
                 .filter((m) => m.is_active)
                 .map((m) => (
@@ -568,7 +572,6 @@ export default function OcrProcessPage() {
                   <button
                     onClick={() => {
                       setShowRawText(false);
-                      setShowNullFields(false);
                       setViewingResult(r);
                     }}
                     className="p-2 rounded-lg hover:bg-primary/10 text-muted hover:text-primary transition-colors shrink-0"
@@ -646,68 +649,61 @@ export default function OcrProcessPage() {
                 </div>
               )}
 
-              {/* Extracted Data — only non-null by default */}
+              {/* Extracted Data — mapped text view */}
               {viewingResult.extracted_data && (() => {
                 const entries = Object.entries(viewingResult.extracted_data!);
                 const filled = entries.filter(([, v]) => v);
-                const empty = entries.filter(([, v]) => !v);
+                const mappedText = entries
+                  .map(([key, value]) => `${key.replace(/_/g, " ")} => ${value ?? "—"}`)
+                  .join("\n");
                 return (
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-semibold">
-                        ฟิลด์ที่สกัดได้
+                        ข้อมูลที่ Mapping แล้ว
                         <span className="text-xs text-muted font-normal ml-2">
                           {filled.length} พบ / {entries.length} ทั้งหมด
                         </span>
                       </h4>
-                      {empty.length > 0 && (
-                        <button
-                          onClick={() => setShowNullFields(!showNullFields)}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          {showNullFields ? "ซ่อน" : "แสดง"}ฟิลด์ว่าง ({empty.length})
-                        </button>
-                      )}
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(mappedText); }}
+                        className="flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors"
+                        title="คัดลอก"
+                      >
+                        <ClipboardCopy className="w-3.5 h-3.5" />
+                        คัดลอก
+                      </button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {filled.map(([key, value]) => (
-                        <div
-                          key={key}
-                          className="px-4 py-3 bg-background rounded-lg border border-primary/20"
-                        >
-                          <p className="text-xs text-primary uppercase tracking-wide font-medium">
-                            {key.replace(/_/g, " ")}
-                          </p>
-                          <p className="text-sm font-semibold mt-1">{value}</p>
-                        </div>
-                      ))}
-                      {showNullFields && empty.map(([key]) => (
-                        <div
-                          key={key}
-                          className="px-4 py-3 bg-background rounded-lg border border-border opacity-50"
-                        >
-                          <p className="text-xs text-muted uppercase tracking-wide">
-                            {key.replace(/_/g, " ")}
-                          </p>
-                          <p className="text-sm text-muted italic mt-1">— ไม่พบข้อมูล</p>
-                        </div>
-                      ))}
-                    </div>
+                    <pre className="p-4 bg-background rounded-lg border border-border text-sm leading-relaxed whitespace-pre-wrap font-mono">
+                      {mappedText}
+                    </pre>
                   </div>
                 );
               })()}
 
-              {/* Raw OCR Text — collapsed by default */}
+              {/* Raw OCR Text — collapsed */}
               {viewingResult.raw_text && (
                 <div>
-                  <button
-                    onClick={() => setShowRawText(!showRawText)}
-                    className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition-colors"
-                  >
-                    <Eye className="w-4 h-4" />
-                    {showRawText ? "ซ่อน" : "แสดง"}ข้อความ OCR ดิบ
-                  </button>
-                  {showRawText && (
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setShowRawText(prev => prev === "raw" ? false : "raw")}
+                      className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition-colors"
+                    >
+                      <Eye className="w-4 h-4" />
+                      {showRawText === "raw" ? "ซ่อน" : "แสดง"}ข้อความ OCR ดิบ
+                    </button>
+                    {showRawText === "raw" && (
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(viewingResult.raw_text!); }}
+                        className="flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors"
+                        title="คัดลอก"
+                      >
+                        <ClipboardCopy className="w-3.5 h-3.5" />
+                        คัดลอก
+                      </button>
+                    )}
+                  </div>
+                  {showRawText === "raw" && (
                     <pre className="mt-3 p-4 bg-background rounded-lg border border-border text-xs leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto font-mono">
                       {viewingResult.raw_text}
                     </pre>
