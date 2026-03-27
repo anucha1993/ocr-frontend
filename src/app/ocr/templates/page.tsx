@@ -24,7 +24,7 @@ interface DetectedPair {
   value: string;
 }
 
-type TransformType = "remove_spaces" | "uppercase" | "lowercase" | "digits_only" | "alphanumeric";
+type TransformType = "remove_spaces" | "uppercase" | "lowercase" | "digits_only" | "alphanumeric" | "normalize_gender";
 
 const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: "remove_spaces", label: "ตัดวรรค" },
@@ -32,6 +32,7 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: "lowercase", label: "พิมพ์เล็ก" },
   { value: "digits_only", label: "ตัวเลขเท่านั้น" },
   { value: "alphanumeric", label: "ตัวอักษร+เลข" },
+  { value: "normalize_gender", label: "แปลงเพศ (M→Male)" },
 ];
 
 const FORMAT_OPTIONS: { value: string; label: string }[] = [
