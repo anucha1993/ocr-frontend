@@ -14,6 +14,9 @@ import {
   Trash2,
   Eye,
   Copy,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { apiFetch, apiUpload } from "@/lib/api";
 
@@ -50,10 +53,12 @@ const FORMAT_OPTIONS: { value: string; label: string }[] = [
 interface MappingRow {
   sourceKey: string;
   targetField: string;
-  extractionMode: "auto" | "same_line" | "next_line";
+  extractionMode: "auto" | "same_line" | "next_line" | "prev_line";
   transform: TransformType[];
   format: string;
   valueMap: { from: string; to: string }[];
+  keywords: string[];
+  regex: string | null;
 }
 
 interface FieldDef {
@@ -61,7 +66,7 @@ interface FieldDef {
   label: string;
   keywords: string[];
   regex: string | null;
-  extraction_mode: "auto" | "same_line" | "next_line";
+  extraction_mode: "auto" | "same_line" | "next_line" | "prev_line";
   transform?: TransformType[];
   format?: string;
   value_map?: Record<string, string>;
@@ -115,6 +120,7 @@ export default function OcrTemplatesPage() {
 
   // View raw text
   const [showRawText, setShowRawText] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -175,12 +181,14 @@ export default function OcrTemplatesPage() {
         }
       }
       return {
-        sourceKey: f.keywords?.[0] || f.label,
+        sourceKey: f.label || f.keywords?.[0] || '',
         targetField: f.key,
         extractionMode: f.extraction_mode || "auto",
         transform: f.transform || [],
         format: f.format || "",
         valueMap: vmArr,
+        keywords: f.keywords || [],
+        regex: f.regex ?? null,
       };
     });
     setMappings(rows);
@@ -242,6 +250,8 @@ export default function OcrTemplatesPage() {
             transform: [] as TransformType[],
             format: "",
             valueMap: [],
+            keywords: [] as string[],
+            regex: null as string | null,
           }))
         );
       }
@@ -255,7 +265,7 @@ export default function OcrTemplatesPage() {
   /* ── Mapping row operations ─────────────────── */
 
   const addMappingRow = () => {
-    setMappings((prev) => [...prev, { sourceKey: "", targetField: "", extractionMode: "auto", transform: [], format: "", valueMap: [] }]);
+    setMappings((prev) => [...prev, { sourceKey: "", targetField: "", extractionMode: "auto", transform: [], format: "", valueMap: [], keywords: [], regex: null }]);
   };
 
   const removeMappingRow = (index: number) => {
@@ -275,7 +285,7 @@ export default function OcrTemplatesPage() {
     if (mappings.some((m) => m.sourceKey === pair.key)) return;
     setMappings((prev) => [
       ...prev,
-      { sourceKey: pair.key, targetField: toSnakeCase(pair.key), extractionMode: "auto", transform: [], format: "", valueMap: [] },
+      { sourceKey: pair.key, targetField: toSnakeCase(pair.key), extractionMode: "auto", transform: [], format: "", valueMap: [], keywords: [], regex: null },
     ]);
   };
 
@@ -313,8 +323,8 @@ export default function OcrTemplatesPage() {
       return {
         key: m.targetField,
         label: m.sourceKey,
-        keywords: [m.sourceKey],
-        regex: null,
+        keywords: m.keywords.length > 0 ? m.keywords : [m.sourceKey],
+        regex: m.regex,
         extraction_mode: m.extractionMode,
         ...(m.transform.length > 0 ? { transform: m.transform } : {}),
         ...(m.format ? { format: m.format } : {}),
@@ -633,6 +643,95 @@ export default function OcrTemplatesPage() {
                   />
                 </div>
 
+                {/* Help Guide */}
+                <div className="border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50/50 dark:bg-blue-950/30">
+                  <button
+                    onClick={() => setShowGuide(!showGuide)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100/50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      คู่มือการสร้างแม่แบบ
+                    </span>
+                    {showGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                  {showGuide && (
+                    <div className="px-4 pb-4 text-xs text-foreground/80 space-y-3 leading-relaxed">
+                      {/* ส่วนต่างๆ ของฟิลด์ */}
+                      <div>
+                        <p className="font-semibold text-foreground mb-1">🔤 แต่ละแถวคือ 1 ฟิลด์ที่ต้องการดึงจากเอกสาร</p>
+                        <table className="w-full text-[11px] border-collapse">
+                          <tbody className="divide-y divide-border">
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">คีย์สำหรับดึงค่า</td><td className="py-1">ชื่อ label ที่แสดงผล เช่น &quot;Date of Birth (เกิดวันที่)&quot;</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">ฟิลด์ผลลัพธ์</td><td className="py-1">ชื่อ key ใน JSON ผลลัพธ์ เช่น <code className="bg-background px-1 rounded">date_of_birth</code></td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* โหมดการดึงข้อมูล */}
+                      <div>
+                        <p className="font-semibold text-foreground mb-1">📍 โหมดการดึงข้อมูล</p>
+                        <table className="w-full text-[11px] border-collapse">
+                          <tbody className="divide-y divide-border">
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">อัตโนมัติ</td><td className="py-1">ค้นหาทั้งบรรทัดเดียวกันและบรรทัดถัดไป (เหมาะสำหรับกรณีทั่วไป)</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">บรรทัดเดียวกัน</td><td className="py-1">ดึงค่าที่อยู่หลัง keyword บนบรรทัดเดียวกัน เช่น <code className="bg-background px-1 rounded">Name Mr. Phyo Ping</code></td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">บรรทัดถัดไป</td><td className="py-1">เจอ keyword แล้วดึงบรรทัดถัดไปเป็นค่า เช่น keyword &quot;วันออกบัตร&quot; → &quot;2 Feb. 2026&quot; (บรรทัดถัดไป)</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">บรรทัดก่อนหน้า</td><td className="py-1">เจอ keyword แล้วดึงบรรทัด<strong>ก่อนหน้า</strong>เป็นค่า เช่น &quot;1 Feb. 2036&quot; อยู่บน keyword &quot;Date of Expiry&quot;</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Keywords & Regex */}
+                      <div>
+                        <p className="font-semibold text-foreground mb-1">🔍 Keywords & Regex</p>
+                        <table className="w-full text-[11px] border-collapse">
+                          <tbody className="divide-y divide-border">
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted align-top">Keywords</td><td className="py-1">คำค้นหาในข้อความ OCR คั่นด้วยคอมมา — ระบบจะค้นหาคำเหล่านี้ในแต่ละบรรทัด ถ้าว่าง จะใช้ &quot;คีย์สำหรับดึงค่า&quot; แทน<br/><span className="text-muted">ตัวอย่าง: <code className="bg-background px-1 rounded">Date of Birth, เกิดวันที่, เกิดวันที</code></span></td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted align-top">Regex</td><td className="py-1">Regular Expression สำหรับดึงค่าที่ไม่มี keyword — ใส่ <strong>capture group</strong> <code className="bg-background px-1 rounded">()</code> ครอบค่าที่ต้องการ <strong>ระบบจะลองจับ regex ก่อน keyword</strong><br/><span className="text-muted">ตัวอย่าง: <code className="bg-background px-1 rounded">(\d{'{'}4{'}'}-\d{'{'}7{'}'})</code> จับเลข &quot;2108-0299076&quot;</span></td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Transform & Format */}
+                      <div>
+                        <p className="font-semibold text-foreground mb-1">⚙️ แปลงค่า & รูปแบบ</p>
+                        <table className="w-full text-[11px] border-collapse">
+                          <tbody className="divide-y divide-border">
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">แปลงค่า (Transform)</td><td className="py-1">ปรับค่าที่ดึงได้ — ลบช่องว่าง, พิมพ์ใหญ่/เล็ก, เอาแค่ตัวเลข ฯลฯ (เลือกได้หลายตัว ทำงานตามลำดับ)</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">รูปแบบ (Format)</td><td className="py-1">แปลงวันที่เป็นรูปแบบที่ต้องการ เช่น &quot;18 Dec. 2005&quot; → <code className="bg-background px-1 rounded">18/12/2005</code> หรือ <code className="bg-background px-1 rounded">18 ธ.ค. 2548</code></td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted align-top">Value Map</td><td className="py-1">กำหนดค่าเอง เช่น OCR อ่านได้ &quot;FULL&quot; → แปลงเป็น &quot;Full (เต็ม)&quot; (เปรียบเทียบแบบ case-insensitive)</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Detection Landmarks */}
+                      <div>
+                        <p className="font-semibold text-foreground mb-1">🎯 จุดสังเกตแม่แบบ (Detection Landmarks)</p>
+                        <p className="mb-1">ใช้ระบุว่าเอกสารนี้<strong>เป็นแม่แบบไหน</strong> ระบบจะคำนวณคะแนนจากจุดสังเกตทั้งหมด แม่แบบที่ได้คะแนนสูงสุดจะถูกเลือกอัตโนมัติ</p>
+                        <table className="w-full text-[11px] border-collapse">
+                          <tbody className="divide-y divide-border">
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">keyword</td><td className="py-1">ถ้าเจอคำนี้ในเอกสาร → <strong>+คะแนน</strong> เช่น &quot;PASSPORT&quot; weight 30</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">not_keyword</td><td className="py-1">ถ้าเจอคำนี้ → <strong>-คะแนน</strong> (ตัดแม่แบบที่ไม่ใช่ออก) เช่น &quot;PASSPORT&quot; weight -50 สำหรับแม่แบบบัตร ID</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">mrz</td><td className="py-1">ตรวจจับ Machine Readable Zone (บรรทัดยาวที่มี &lt; เยอะ) → ถ้าเจอ +คะแนน</td></tr>
+                            <tr><td className="py-1 pr-2 font-medium whitespace-nowrap text-muted">regex</td><td className="py-1">ใช้ regex ตรวจจับรูปแบบพิเศษ เช่น เลขบัตรประชาชน 13 หลัก</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Tips */}
+                      <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md p-2.5">
+                        <p className="font-semibold text-amber-700 dark:text-amber-300 mb-1">💡 เคล็ดลับ</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                          <li>อัปโหลดตัวอย่างเอกสารทางซ้ายเพื่อดู OCR text จริง แล้วค่อยตั้งค่า keyword/regex</li>
+                          <li>Regex มี<strong>ลำดับความสำคัญสูงกว่า</strong> Keywords — ถ้ามี regex จะลองจับก่อน</li>
+                          <li>ฟิลด์ที่ไม่มี keyword (เช่น เลขบัตร) ให้ใช้ regex อย่างเดียว ไม่ต้องใส่ keyword</li>
+                          <li>ปุ่ม &quot;แสดงข้อความ OCR ดิบ&quot; ช่วยดูว่าแต่ละบรรทัดมีอะไรบ้าง</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Mapping table */}
                 <div>
                   <div className="flex items-center justify-between mb-3">
@@ -652,6 +751,7 @@ export default function OcrTemplatesPage() {
                           <option value="auto">อัตโนมัติ</option>
                           <option value="same_line">บรรทัดเดียวกัน</option>
                           <option value="next_line">บรรทัดถัดไป</option>
+                          <option value="prev_line">บรรทัดก่อนหน้า</option>
                         </select>
                       )}
                       <button
@@ -747,6 +847,7 @@ export default function OcrTemplatesPage() {
                             <option value="auto">อัตโนมัติ</option>
                             <option value="same_line">บรรทัดเดียวกัน</option>
                             <option value="next_line">บรรทัดถัดไป</option>
+                            <option value="prev_line">บรรทัดก่อนหน้า</option>
                           </select>
 
                           {/* Remove button */}
@@ -851,6 +952,43 @@ export default function OcrTemplatesPage() {
                               >
                                 + เพิ่ม mapping
                               </button>
+                            </div>
+
+                            {/* Keywords */}
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] text-muted font-medium shrink-0">Keywords:</span>
+                              <input
+                                type="text"
+                                value={row.keywords.join(", ")}
+                                onChange={(e) => {
+                                  const kw = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                                  setMappings((prev) => {
+                                    const updated = [...prev];
+                                    updated[i] = { ...updated[i], keywords: kw };
+                                    return updated;
+                                  });
+                                }}
+                                placeholder="คำค้น (คั่นด้วย , เช่น Date of Birth, เกิดวันที่)"
+                                className="flex-1 px-2 py-1 bg-background border border-border rounded text-[11px]"
+                              />
+                            </div>
+
+                            {/* Regex */}
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] text-muted font-medium shrink-0">Regex:</span>
+                              <input
+                                type="text"
+                                value={row.regex || ""}
+                                onChange={(e) => {
+                                  setMappings((prev) => {
+                                    const updated = [...prev];
+                                    updated[i] = { ...updated[i], regex: e.target.value || null };
+                                    return updated;
+                                  });
+                                }}
+                                placeholder="regex pattern (ใส่ capture group เช่น (\d{4}-\d{7}) )"
+                                className="flex-1 px-2 py-1 bg-background border border-border rounded text-[11px] font-mono"
+                              />
                             </div>
                             {row.valueMap.length > 0 && (
                               <div className="space-y-1">
