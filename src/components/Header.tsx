@@ -2,9 +2,26 @@
 
 import { Bell, LogOut, Search, User } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
+import Link from "next/link";
 
 export default function Header() {
   const { user, logout } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchCount = () => {
+      apiFetch("/notifications/unread-count")
+        .then((r) => r.json())
+        .then((d) => setUnreadCount(d.unread_count ?? 0))
+        .catch(() => {});
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000); // poll every 30s
+    return () => clearInterval(interval);
+  }, [user]);
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-card border-b border-border flex items-center justify-between px-6">
@@ -20,10 +37,14 @@ export default function Header() {
 
       {/* Right */}
       <div className="flex items-center gap-4">
-        <button className="relative p-2 rounded-lg hover:bg-background transition-colors">
+        <Link href="/notifications" className="relative p-2 rounded-lg hover:bg-background transition-colors">
           <Bell className="w-5 h-5 text-muted" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full" />
-        </button>
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-danger text-white text-[10px] font-bold rounded-full">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </Link>
 
         <div className="flex items-center gap-3">
           <div className="text-right">

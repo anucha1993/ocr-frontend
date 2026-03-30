@@ -16,6 +16,8 @@ import {
   ChevronDown,
   Briefcase,
   ExternalLink,
+  AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
@@ -179,6 +181,173 @@ const statusColor = (v: string) => {
     return "bg-amber-100 text-amber-700";
   return "bg-slate-100 text-slate-600";
 };
+
+/* ── Data comparison helpers ── */
+
+interface FieldMismatch {
+  label: string;
+  field: string;
+  scanned: string;
+  system: string;
+}
+
+/** Normalize values for comparison: trim, uppercase, strip separators */
+function norm(v: string | undefined | null): string {
+  if (!v || v === "—" || v === "-") return "";
+  return v.trim().toUpperCase().replace(/[<\s]+/g, " ").replace(/\s+/g, " ");
+}
+
+const MONTH_MAP: Record<string, string> = {
+  JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06",
+  JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12",
+  JANUARY: "01", FEBRUARY: "02", MARCH: "03", APRIL: "04",
+  JUNE: "06", JULY: "07", AUGUST: "08", SEPTEMBER: "09",
+  OCTOBER: "10", NOVEMBER: "11", DECEMBER: "12",
+};
+
+/** Normalize date values — convert all formats to YYYY-MM-DD for comparison */
+function normDate(v: string | undefined | null): string {
+  if (!v || v === "—") return "";
+  const s = v.trim();
+
+  // YYMMDD (6 digits)
+  if (/^\d{6}$/.test(s)) {
+    const yy = parseInt(s.substring(0, 2));
+    const y = yy > 50 ? `19${s.substring(0, 2)}` : `20${s.substring(0, 2)}`;
+    return `${y}-${s.substring(2, 4)}-${s.substring(4, 6)}`;
+  }
+
+  // ISO yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.substring(0, 10);
+  }
+
+  // DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split("/");
+    return `${y}-${m}-${d}`;
+  }
+
+  // "15 JUN 2002" or "15 JUNE 2002"
+  const mdy = s.toUpperCase().match(/^(\d{1,2})\s+([A-Z]+)\s+(\d{4})$/);
+  if (mdy) {
+    const mm = MONTH_MAP[mdy[2]];
+    if (mm) return `${mdy[3]}-${mm}-${mdy[1].padStart(2, "0")}`;
+  }
+
+  // "JUN 15, 2002" variant
+  const mdy2 = s.toUpperCase().match(/^([A-Z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (mdy2) {
+    const mm = MONTH_MAP[mdy2[1]];
+    if (mm) return `${mdy2[3]}-${mm}-${mdy2[2].padStart(2, "0")}`;
+  }
+
+  return s.toUpperCase();
+}
+
+/** Normalize gender to canonical form */
+function normGender(v: string | undefined | null): string {
+  if (!v) return "";
+  const s = v.trim().toUpperCase();
+  if (["M", "MALE", "ชาย"].includes(s)) return "M";
+  if (["F", "FEMALE", "หญิง"].includes(s)) return "F";
+  return s;
+}
+
+/** Normalize nationality — map English/Thai names to ISO code */
+const NATIONALITY_MAP: Record<string, string> = {
+  MYANMAR: "MMR", BURMA: "MMR", "เมียนมา": "MMR", "พม่า": "MMR", MMR: "MMR",
+  CAMBODIA: "KHM", CAMBODIAN: "KHM", "กัมพูชา": "KHM", KHM: "KHM",
+  LAOS: "LAO", LAO: "LAO", LAOTIAN: "LAO", "ลาว": "LAO",
+  VIETNAM: "VNM", VIETNAMESE: "VNM", "เวียดนาม": "VNM", VNM: "VNM",
+  THAILAND: "THA", THAI: "THA", "ไทย": "THA", THA: "THA",
+  CHINA: "CHN", CHINESE: "CHN", "จีน": "CHN", CHN: "CHN",
+  INDIA: "IND", INDIAN: "IND", "อินเดีย": "IND", IND: "IND",
+  NEPAL: "NPL", NEPALESE: "NPL", "เนปาล": "NPL", NPL: "NPL",
+  PHILIPPINES: "PHL", FILIPINO: "PHL", "ฟิลิปปินส์": "PHL", PHL: "PHL",
+};
+
+function normNationality(v: string | undefined | null): string {
+  if (!v) return "";
+  const s = v.trim().toUpperCase();
+  return NATIONALITY_MAP[s] || s;
+}
+
+/** Compare scanned passport data vs Zoho record, return mismatches */
+function compareData(
+  scanned: { passport_no: string; firstname: string; lastname: string; nationality?: string; birthdate?: string; expiry_date?: string; sex?: string } | null,
+  zoho: ZohoRecord | null
+): FieldMismatch[] {
+  if (!scanned || !zoho) return [];
+
+  const mismatches: FieldMismatch[] = [];
+
+  // ── Smart name comparison ──
+  // Zoho sometimes stores full name in First_Name (e.g. "CHANTHA THOEURN")
+  // or splits differently. Some nationalities (e.g. Lao) put surname first.
+  // Compare combined full name in both orders.
+  const scannedFullName = norm(`${scanned.firstname} ${scanned.lastname}`);
+  const scannedReversed = norm(`${scanned.lastname} ${scanned.firstname}`);
+  const zohoFullName = norm(`${zoho.First_Name || ""} ${zoho.Last_Name || ""}`);
+  const zohoReversed = norm(`${zoho.Last_Name || ""} ${zoho.First_Name || ""}`);
+  const zohoAltFullName = norm(zoho.Full_Name_Labour || "");
+
+  // Collect all name tokens from both sides for containment check
+  const scannedParts = [norm(scanned.firstname), norm(scanned.lastname)].filter(Boolean);
+  const zohoParts = [norm(zoho.First_Name), norm(zoho.Last_Name)].filter(Boolean);
+
+  const nameMatch =
+    scannedFullName === zohoFullName ||
+    scannedFullName === zohoReversed ||
+    scannedReversed === zohoFullName ||
+    scannedReversed === zohoReversed ||
+    scannedFullName === zohoAltFullName ||
+    scannedReversed === zohoAltFullName ||
+    // Zoho First_Name contains both first+last (e.g. "CHANTHA THOEURN" in First_Name only)
+    norm(zoho.First_Name) === scannedFullName ||
+    norm(zoho.First_Name) === scannedReversed ||
+    // All parts of scanned name exist in Zoho combined name (regardless of order/split)
+    (scannedParts.length === 2 &&
+      scannedParts.every((p) => zohoFullName.includes(p))) ||
+    // All Zoho parts exist in scanned combined name
+    (zohoParts.length === 2 &&
+      zohoParts.every((p) => scannedFullName.includes(p)));
+
+  if (scannedFullName && zohoFullName && !nameMatch) {
+    mismatches.push({
+      label: "ชื่อ-นามสกุล (Full Name)",
+      field: "fullname",
+      scanned: `${scanned.firstname} ${scanned.lastname}`.trim(),
+      system: `${zoho.First_Name || ""} ${zoho.Last_Name || ""}`.trim(),
+    });
+  }
+
+  // ── Other field checks ──
+  const checks: { label: string; field: string; scannedVal: string | undefined; systemVal: string | undefined; isDate?: boolean; isGender?: boolean; isNat?: boolean }[] = [
+    { label: "Passport No.", field: "passport_no", scannedVal: scanned.passport_no, systemVal: zoho.Passport_ID },
+    { label: "สัญชาติ (Nationality)", field: "nationality", scannedVal: scanned.nationality, systemVal: zoho.Nationality, isNat: true },
+    { label: "วันเกิด (Date of Birth)", field: "birthdate", scannedVal: scanned.birthdate, systemVal: zoho.Birthday, isDate: true },
+    { label: "วันหมดอายุ (Date of Expiry)", field: "expiry_date", scannedVal: scanned.expiry_date, systemVal: zoho.Passport_Expire, isDate: true },
+    { label: "เพศ (Sex)", field: "sex", scannedVal: scanned.sex, systemVal: zoho.Gender, isGender: true },
+  ];
+
+  for (const c of checks) {
+    const sv = c.isDate ? normDate(c.scannedVal) : c.isGender ? normGender(c.scannedVal) : c.isNat ? normNationality(c.scannedVal) : norm(c.scannedVal);
+    const zv = c.isDate ? normDate(c.systemVal) : c.isGender ? normGender(c.systemVal) : c.isNat ? normNationality(c.systemVal) : norm(c.systemVal);
+
+    // Only compare if both have values
+    if (sv && zv && sv !== zv) {
+      mismatches.push({
+        label: c.label,
+        field: c.field,
+        scanned: c.scannedVal || "",
+        system: c.systemVal || "",
+      });
+    }
+  }
+
+  return mismatches;
+}
 
 /* ══════════════════════════════════════════════════════════════
    Page Component
@@ -672,8 +841,71 @@ export default function ForeignDataSearchPage() {
       {!loading && data && (() => {
         const firstName = data.First_Name || "";
         const lastName = data.Last_Name || "";
+        const mismatches = compareData(scannedPassport, data);
+        const mismatchFields = new Set(mismatches.map((m) => m.field));
         return (
         <div className="max-w-2xl mx-auto space-y-3">
+
+          {/* ── Data Comparison Result ── */}
+          {scannedPassport && (
+            <div className={`rounded-xl border-2 overflow-hidden ${
+              mismatches.length > 0
+                ? "border-red-300 bg-red-50"
+                : "border-emerald-300 bg-emerald-50"
+            }`}>
+              <div className={`px-4 py-2.5 flex items-center gap-2 ${
+                mismatches.length > 0
+                  ? "bg-red-100"
+                  : "bg-emerald-100"
+              }`}>
+                {mismatches.length > 0 ? (
+                  <>
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                    <span className="text-sm font-semibold text-red-700">
+                      พบข้อมูลไม่ตรงกัน {mismatches.length} รายการ — กรุณาตรวจสอบ
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span className="text-sm font-semibold text-emerald-700">
+                      ข้อมูลจากเครื่องอ่านตรงกับข้อมูลในระบบ
+                    </span>
+                  </>
+                )}
+              </div>
+              {mismatches.length > 0 && (
+                <div className="px-4 py-3">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-red-500/70">
+                        <th className="pb-2 font-medium">ฟิลด์</th>
+                        <th className="pb-2 font-medium">ข้อมูลจากเครื่องอ่าน</th>
+                        <th className="pb-2 font-medium">ข้อมูลในระบบ (Zoho)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mismatches.map((m) => (
+                        <tr key={m.field} className="border-t border-red-200/60">
+                          <td className="py-2 pr-3 font-medium text-red-800">{m.label}</td>
+                          <td className="py-2 pr-3">
+                            <span className="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-mono text-xs">
+                              {m.scanned || "—"}
+                            </span>
+                          </td>
+                          <td className="py-2">
+                            <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-xs">
+                              {m.system || "—"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
           <div className="bg-[#f5f0e8] rounded-2xl border-2 border-[#c4b89a] overflow-hidden shadow-lg">
             {/* Top band */}
             <div className="bg-gradient-to-r from-[#1a3a5c] to-[#2a5a8c] px-5 py-2.5 flex items-center justify-between">
@@ -732,11 +964,11 @@ export default function ForeignDataSearchPage() {
                   <div className="grid grid-cols-2 gap-x-5 gap-y-2">
                     <PPField label="Type" value="P" />
                     <PPField label="Country Code" value={scannedPassport?.issuing_country?.toUpperCase() || data.Country_Region?.toUpperCase() || "—"} />
-                    <PPField label="Surname / ชื่อสกุล" value={scannedPassport?.lastname?.toUpperCase() || lastName.toUpperCase() || "—"} full />
-                    <PPField label="Given Names / ชื่อ" value={scannedPassport?.firstname?.toUpperCase() || firstName.toUpperCase() || "—"} full />
-                    <PPField label="Nationality" value={scannedPassport?.nationality || data.Nationality || "—"} />
-                    <PPField label="Date of Birth" value={fmtDate(scannedPassport?.birthdate || data.Birthday)} />
-                    <PPField label="Sex" value={scannedPassport?.sex || data.Gender || "—"} />
+                    <PPField label="Surname / ชื่อสกุล" value={scannedPassport?.lastname?.toUpperCase() || lastName.toUpperCase() || "—"} full warn={mismatchFields.has("fullname")} />
+                    <PPField label="Given Names / ชื่อ" value={scannedPassport?.firstname?.toUpperCase() || firstName.toUpperCase() || "—"} full warn={mismatchFields.has("fullname")} />
+                    <PPField label="Nationality" value={scannedPassport?.nationality || data.Nationality || "—"} warn={mismatchFields.has("nationality")} />
+                    <PPField label="Date of Birth" value={fmtDate(scannedPassport?.birthdate || data.Birthday)} warn={mismatchFields.has("birthdate")} />
+                    <PPField label="Sex" value={scannedPassport?.sex || data.Gender || "—"} warn={mismatchFields.has("sex")} />
                     <PPField label="National ID" value={data.National_ID || "—"} mono />
                   </div>
                 </div>
@@ -744,9 +976,9 @@ export default function ForeignDataSearchPage() {
 
               {/* Passport number */}
               <div className="mt-4 pt-3 border-t-2 border-dashed border-[#c4b89a]/60 flex items-center justify-between">
-                <PPField label="Passport No." value={scannedPassport?.passport_no || data.Passport_ID || "—"} large mono />
+                <PPField label="Passport No." value={scannedPassport?.passport_no || data.Passport_ID || "—"} large mono warn={mismatchFields.has("passport_no")} />
                 <div className="text-right">
-                  <PPField label="Date of Expiry" value={fmtDate(scannedPassport?.expiry_date || (data.Passport_Expire as string))} />
+                  <PPField label="Date of Expiry" value={fmtDate(scannedPassport?.expiry_date || (data.Passport_Expire as string))} warn={mismatchFields.has("expiry_date")} />
                 </div>
               </div>
 
@@ -836,15 +1068,18 @@ export default function ForeignDataSearchPage() {
 
 /* ── Sub-components ── */
 
-function PPField({ label, value, full, large, mono }: {
-  label: string; value: string; full?: boolean; large?: boolean; mono?: boolean;
+function PPField({ label, value, full, large, mono, warn }: {
+  label: string; value: string; full?: boolean; large?: boolean; mono?: boolean; warn?: boolean;
 }) {
   return (
-    <div className={full ? "col-span-2" : ""}>
-      <p className="text-[9px] sm:text-[10px] text-[#8a7e6b] uppercase tracking-wider leading-none mb-0.5">{label}</p>
-      <p className={`text-[#1a1a1a] leading-tight truncate ${
+    <div className={`${full ? "col-span-2" : ""} ${warn ? "relative rounded-md px-1.5 py-0.5 -mx-1.5 bg-red-100/80 ring-1 ring-red-300" : ""}`}>
+      <p className={`text-[9px] sm:text-[10px] uppercase tracking-wider leading-none mb-0.5 ${warn ? "text-red-500 font-semibold" : "text-[#8a7e6b]"}`}>
+        {warn && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 mr-1 align-middle" />}
+        {label}
+      </p>
+      <p className={`leading-tight truncate ${
         large ? "text-lg sm:text-xl font-bold" : "text-sm font-semibold"
-      } ${mono ? "font-mono tracking-wider" : ""}`}>
+      } ${mono ? "font-mono tracking-wider" : ""} ${warn ? "text-red-700" : "text-[#1a1a1a]"}`}>
         {value}
       </p>
     </div>

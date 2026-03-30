@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   Settings, LayoutDashboard, Server, GitBranch, TestTube, ChevronDown,
   Users, CreditCard, Scan, Map, ClipboardList, Search, UserCog,
-  ScanSearch, FileText, Settings2, FileCog, Cloud, IdCard,
+  ScanSearch, FileText, Settings2, FileCog, Cloud, IdCard, Bell, Shield,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -33,6 +33,7 @@ const ocrNav = [
 const adminNav = [
   { name: "แดชบอร์ด", href: "/dashboard", icon: LayoutDashboard },
   { name: "จัดการผู้ใช้งาน", href: "/users", icon: UserCog },
+  { name: "Audit Log", href: "/audit-logs", icon: Shield },
 ];
 
 const mrzSettingsNav = [
@@ -49,7 +50,7 @@ const ocrSettingsNav = [
 
 function NavLink({ href, icon: Icon, name, size = "md" }: { href: string; icon: React.ElementType; name: string; size?: "sm" | "md" }) {
   const pathname = usePathname();
-  const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+  const isActive = pathname === href;
   return (
     <Link
       href={href}
@@ -116,6 +117,10 @@ export default function Sidebar() {
           <p className="text-[10px] text-blue-400 leading-tight">ประมวลผลผ่าน Cloud API</p>
         </div>
         {ocrNav.map((item) => <NavLink key={item.href} {...item} />)}
+
+        {/* ── แจ้งเตือน ── */}
+        <SectionLabel label="แจ้งเตือน" />
+        <NavLink href="/notifications" icon={Bell} name="การแจ้งเตือน" />
 
         {/* ── ตั้งค่า / ผู้ดูแล (Admin only) ── */}
         {isAdmin && (

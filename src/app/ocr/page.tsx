@@ -16,6 +16,8 @@ import {
   Globe,
   Tag,
   ClipboardCopy,
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { apiFetch, apiUploadStream, API_BASE } from "@/lib/api";
 
@@ -47,6 +49,175 @@ interface SaveForm {
   note: string;
   visibility: "private" | "public";
   selectedIds: Set<number>;
+}
+
+interface ZohoRecord {
+  id: string;
+  First_Name?: string;
+  Last_Name?: string;
+  Full_Name_Labour?: string;
+  Passport_ID?: string;
+  Nationality?: string;
+  Gender?: string;
+  Birthday?: string;
+  Passport_Expire?: string;
+  [key: string]: unknown;
+}
+
+interface FieldMismatch {
+  label: string;
+  field: string;
+  scanned: string;
+  system: string;
+}
+
+/** Normalize for comparison */
+function norm(v: string | undefined | null): string {
+  if (!v || v === "—" || v === "-") return "";
+  return v.trim().toUpperCase().replace(/[<\s]+/g, " ").replace(/\s+/g, " ");
+}
+
+const MONTH_MAP: Record<string, string> = {
+  JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06",
+  JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12",
+  JANUARY: "01", FEBRUARY: "02", MARCH: "03", APRIL: "04",
+  JUNE: "06", JULY: "07", AUGUST: "08", SEPTEMBER: "09",
+  OCTOBER: "10", NOVEMBER: "11", DECEMBER: "12",
+};
+
+/** Normalize dates to YYYY-MM-DD for comparison */
+function normDate(v: string | undefined | null): string {
+  if (!v || v === "—") return "";
+  const s = v.trim();
+
+  // YYMMDD (6 digits)
+  if (/^\d{6}$/.test(s)) {
+    const yy = parseInt(s.substring(0, 2));
+    const y = yy > 50 ? `19${s.substring(0, 2)}` : `20${s.substring(0, 2)}`;
+    return `${y}-${s.substring(2, 4)}-${s.substring(4, 6)}`;
+  }
+
+  // ISO yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.substring(0, 10);
+  }
+
+  // DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split("/");
+    return `${y}-${m}-${d}`;
+  }
+
+  // "15 JUN 2002" or "15 JUNE 2002"
+  const mdy = s.toUpperCase().match(/^(\d{1,2})\s+([A-Z]+)\s+(\d{4})$/);
+  if (mdy) {
+    const mm = MONTH_MAP[mdy[2]];
+    if (mm) return `${mdy[3]}-${mm}-${mdy[1].padStart(2, "0")}`;
+  }
+
+  // "JUN 15, 2002" variant
+  const mdy2 = s.toUpperCase().match(/^([A-Z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (mdy2) {
+    const mm = MONTH_MAP[mdy2[1]];
+    if (mm) return `${mdy2[3]}-${mm}-${mdy2[2].padStart(2, "0")}`;
+  }
+
+  return s.toUpperCase();
+}
+
+/** Normalize gender to canonical form */
+function normGender(v: string | undefined | null): string {
+  if (!v) return "";
+  const s = v.trim().toUpperCase();
+  if (["M", "MALE", "ชาย"].includes(s)) return "M";
+  if (["F", "FEMALE", "หญิง"].includes(s)) return "F";
+  return s;
+}
+
+/** Normalize nationality — map English names / codes to canonical form */
+const NATIONALITY_MAP: Record<string, string> = {
+  MYANMAR: "MMR", BURMA: "MMR", "เมียนมา": "MMR", "พม่า": "MMR", MMR: "MMR",
+  CAMBODIA: "KHM", CAMBODIAN: "KHM", "กัมพูชา": "KHM", KHM: "KHM",
+  LAOS: "LAO", LAO: "LAO", LAOTIAN: "LAO", "ลาว": "LAO",
+  VIETNAM: "VNM", VIETNAMESE: "VNM", "เวียดนาม": "VNM", VNM: "VNM",
+  THAILAND: "THA", THAI: "THA", "ไทย": "THA", THA: "THA",
+  CHINA: "CHN", CHINESE: "CHN", "จีน": "CHN", CHN: "CHN",
+  INDIA: "IND", INDIAN: "IND", "อินเดีย": "IND", IND: "IND",
+  NEPAL: "NPL", NEPALESE: "NPL", "เนปาล": "NPL", NPL: "NPL",
+  PHILIPPINES: "PHL", FILIPINO: "PHL", "ฟิลิปปินส์": "PHL", PHL: "PHL",
+};
+
+function normNationality(v: string | undefined | null): string {
+  if (!v) return "";
+  const s = v.trim().toUpperCase();
+  return NATIONALITY_MAP[s] || s;
+}
+
+/** Smart compare OCR data vs Zoho */
+function compareOcrWithZoho(
+  extracted: Record<string, string | null>,
+  zoho: ZohoRecord
+): FieldMismatch[] {
+  const mismatches: FieldMismatch[] = [];
+
+  const firstname = extracted.firstname || extracted.given_names || extracted.first_name || "";
+  const lastname = extracted.lastname || extracted.surname || extracted.last_name || "";
+
+  // ── Smart name comparison ──
+  const scannedFullName = norm(`${firstname} ${lastname}`);
+  const scannedReversed = norm(`${lastname} ${firstname}`);
+  const zohoFullName = norm(`${zoho.First_Name || ""} ${zoho.Last_Name || ""}`);
+  const zohoReversed = norm(`${zoho.Last_Name || ""} ${zoho.First_Name || ""}`);
+  const zohoAltFullName = norm(zoho.Full_Name_Labour || "");
+  const scannedParts = [norm(firstname), norm(lastname)].filter(Boolean);
+  const zohoParts = [norm(zoho.First_Name), norm(zoho.Last_Name)].filter(Boolean);
+
+  const nameMatch =
+    !scannedFullName.trim() || !zohoFullName.trim() ||
+    scannedFullName === zohoFullName ||
+    scannedFullName === zohoReversed ||
+    scannedReversed === zohoFullName ||
+    scannedReversed === zohoReversed ||
+    scannedFullName === zohoAltFullName ||
+    scannedReversed === zohoAltFullName ||
+    norm(zoho.First_Name) === scannedFullName ||
+    norm(zoho.First_Name) === scannedReversed ||
+    (scannedParts.length === 2 && scannedParts.every((p) => zohoFullName.includes(p))) ||
+    (zohoParts.length === 2 && zohoParts.every((p) => scannedFullName.includes(p)));
+
+  if (!nameMatch) {
+    mismatches.push({
+      label: "ชื่อ-นามสกุล",
+      field: "fullname",
+      scanned: `${firstname} ${lastname}`.trim(),
+      system: `${zoho.First_Name || ""} ${zoho.Last_Name || ""}`.trim(),
+    });
+  }
+
+  // ── Other fields ──
+  const passportNo = extracted.passport_no || extracted.passport_number || "";
+  const nationality = extracted.nationality || "";
+  const birthdate = extracted.birthdate || extracted.date_of_birth || extracted.birthday || "";
+  const expiryDate = extracted.expiry_date || extracted.date_of_expiry || "";
+  const sex = extracted.sex || extracted.gender || "";
+
+  const checks: { label: string; field: string; sv: string; zv: string; isDate?: boolean; isGender?: boolean; isNat?: boolean }[] = [
+    { label: "Passport No.", field: "passport_no", sv: passportNo, zv: zoho.Passport_ID || "" },
+    { label: "สัญชาติ", field: "nationality", sv: nationality, zv: zoho.Nationality || "", isNat: true },
+    { label: "วันเกิด", field: "birthdate", sv: birthdate, zv: zoho.Birthday || "", isDate: true },
+    { label: "วันหมดอายุ", field: "expiry_date", sv: expiryDate, zv: zoho.Passport_Expire || "", isDate: true },
+    { label: "เพศ", field: "sex", sv: sex, zv: zoho.Gender || "", isGender: true },
+  ];
+
+  for (const c of checks) {
+    const a = c.isDate ? normDate(c.sv) : c.isGender ? normGender(c.sv) : c.isNat ? normNationality(c.sv) : norm(c.sv);
+    const b = c.isDate ? normDate(c.zv) : c.isGender ? normGender(c.zv) : c.isNat ? normNationality(c.zv) : norm(c.zv);
+    if (a && b && a !== b) {
+      mismatches.push({ label: c.label, field: c.field, scanned: c.sv, system: c.zv });
+    }
+  }
+
+  return mismatches;
 }
 
 export default function OcrProcessPage() {
@@ -82,6 +253,11 @@ export default function OcrProcessPage() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Zoho comparison ──
+  const [zohoCheckEnabled, setZohoCheckEnabled] = useState(false);
+  const [zohoMap, setZohoMap] = useState<Map<number, { zoho: ZohoRecord; mismatches: FieldMismatch[] }>>(new Map());
+  const [zohoLoadingIds, setZohoLoadingIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     apiFetch("/ocr/field-mappings")
@@ -184,6 +360,14 @@ export default function OcrProcessPage() {
             setAutoDetected((ev.auto_detected as boolean) || false);
             setFiles([]);
             setProgress((p) => ({ ...p!, phase: "done" }));
+            // Zoho comparison: trigger after complete
+            if (zohoCheckEnabled) {
+              setResults((prev) => {
+                // Defer Zoho lookups
+                setTimeout(() => runZohoComparison(prev), 100);
+                return prev;
+              });
+            }
             // Pre-fill save form
             setSaveForm((f) => ({
               ...f,
@@ -198,6 +382,45 @@ export default function OcrProcessPage() {
     } finally {
       setProcessing(false);
       setProgress(null);
+    }
+  };
+
+  /** Search Zoho for each result and compare */
+  const runZohoComparison = async (items: OcrResultItem[]) => {
+    const completed = items.filter(
+      (r) => r.status === "completed" && r.extracted_data
+    );
+    for (const r of completed) {
+      const ppNo =
+        r.extracted_data?.passport_no ||
+        r.extracted_data?.passport_number ||
+        "";
+      if (!ppNo.trim()) continue;
+
+      setZohoLoadingIds((s) => new Set(s).add(r.id));
+      try {
+        const res = await apiFetch(
+          `/foreign-data/search?passport_no=${encodeURIComponent(ppNo.trim())}`
+        );
+        const json = await res.json();
+        if (json.success && json.data?.length > 0) {
+          const zoho = json.data[0] as ZohoRecord;
+          const mismatches = compareOcrWithZoho(r.extracted_data!, zoho);
+          setZohoMap((prev) => {
+            const next = new Map(prev);
+            next.set(r.id, { zoho, mismatches });
+            return next;
+          });
+        }
+      } catch {
+        // silently skip
+      } finally {
+        setZohoLoadingIds((s) => {
+          const next = new Set(s);
+          next.delete(r.id);
+          return next;
+        });
+      }
     }
   };
 
@@ -286,6 +509,15 @@ export default function OcrProcessPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">อัพโหลดไฟล์</h2>
           <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={zohoCheckEnabled}
+                onChange={(e) => setZohoCheckEnabled(e.target.checked)}
+                className="w-4 h-4 accent-primary"
+              />
+              <span className="text-sm font-medium">ตรวจสอบข้อมูลจาก Zoho</span>
+            </label>
             <select
               value={selectedMappingId}
               onChange={(e) => setSelectedMappingId(e.target.value)}
@@ -565,6 +797,41 @@ export default function OcrProcessPage() {
                   {r.status === "failed" && r.error_message && (
                     <p className="text-xs text-danger mt-1">{r.error_message}</p>
                   )}
+
+                  {/* Zoho comparison result for this item */}
+                  {zohoCheckEnabled && r.status === "completed" && (() => {
+                    const zr = zohoMap.get(r.id);
+                    const isLoading = zohoLoadingIds.has(r.id);
+                    if (isLoading) return (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> ตรวจสอบ Zoho...
+                      </div>
+                    );
+                    if (!zr) return null;
+                    if (zr.mismatches.length === 0) return (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-success">
+                        <ShieldCheck className="w-3.5 h-3.5" /> ข้อมูลตรงกับ Zoho
+                      </div>
+                    );
+                    return (
+                      <div className="mt-2">
+                        <div className="flex items-center gap-1.5 text-xs text-danger font-medium mb-1">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          พบข้อมูลไม่ตรง {zr.mismatches.length} รายการ
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {zr.mismatches.map((m) => (
+                            <span key={m.field} className="inline-flex items-center gap-1 px-2 py-0.5 bg-danger/10 border border-danger/20 rounded text-xs text-danger">
+                              <span className="font-medium">{m.label}:</span>
+                              <span>{m.scanned}</span>
+                              <span className="text-muted">→</span>
+                              <span>{m.system}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* View Button */}

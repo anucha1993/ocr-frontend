@@ -24,12 +24,13 @@ interface DetectedPair {
   value: string;
 }
 
-type TransformType = "remove_spaces" | "uppercase" | "lowercase" | "digits_only" | "alphanumeric" | "normalize_gender";
+type TransformType = "remove_spaces" | "uppercase" | "lowercase" | "trim" | "digits_only" | "alphanumeric" | "normalize_gender";
 
 const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: "remove_spaces", label: "ตัดวรรค" },
   { value: "uppercase", label: "พิมพ์ใหญ่" },
   { value: "lowercase", label: "พิมพ์เล็ก" },
+  { value: "trim", label: "ตัดช่องว่างหัวท้าย" },
   { value: "digits_only", label: "ตัวเลขเท่านั้น" },
   { value: "alphanumeric", label: "ตัวอักษร+เลข" },
   { value: "normalize_gender", label: "แปลงเพศ (M→Male)" },
