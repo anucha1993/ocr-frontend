@@ -258,11 +258,11 @@ function normGender(v: string | undefined | null): string {
 const NATIONALITY_MAP: Record<string, string> = {
   MYANMAR: "MMR", BURMA: "MMR", "เมียนมา": "MMR", "พม่า": "MMR", MMR: "MMR",
   CAMBODIA: "KHM", CAMBODIAN: "KHM", "กัมพูชา": "KHM", KHM: "KHM",
-  LAOS: "LAO", LAO: "LAO", LAOTIAN: "LAO", "ลาว": "LAO",
+  LAOS: "LAO", LAO: "LAO", LAOTIAN: "LAO", "ลาว": "LAO", LA0: "LAO",
   VIETNAM: "VNM", VIETNAMESE: "VNM", "เวียดนาม": "VNM", VNM: "VNM",
   THAILAND: "THA", THAI: "THA", "ไทย": "THA", THA: "THA",
   CHINA: "CHN", CHINESE: "CHN", "จีน": "CHN", CHN: "CHN",
-  INDIA: "IND", INDIAN: "IND", "อินเดีย": "IND", IND: "IND",
+  INDIA: "IND", INDIAN: "IND", "อินเดีย": "IND", IND: "IND", "1ND": "IND",
   NEPAL: "NPL", NEPALESE: "NPL", "เนปาล": "NPL", NPL: "NPL",
   PHILIPPINES: "PHL", FILIPINO: "PHL", "ฟิลิปปินส์": "PHL", PHL: "PHL",
 };
