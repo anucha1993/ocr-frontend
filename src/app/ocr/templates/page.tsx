@@ -53,6 +53,7 @@ interface MappingRow {
   extractionMode: "auto" | "same_line" | "next_line";
   transform: TransformType[];
   format: string;
+  valueMap: { from: string; to: string }[];
 }
 
 interface FieldDef {
@@ -63,6 +64,7 @@ interface FieldDef {
   extraction_mode: "auto" | "same_line" | "next_line";
   transform?: TransformType[];
   format?: string;
+  value_map?: Record<string, string>;
 }
 
 interface LandmarkDef {
@@ -164,13 +166,23 @@ export default function OcrTemplatesPage() {
     setSuccess(null);
 
     // Reconstruct mapping rows from saved fields
-    const rows: MappingRow[] = t.fields.map((f) => ({
-      sourceKey: f.keywords?.[0] || f.label,
-      targetField: f.key,
-      extractionMode: f.extraction_mode || "auto",
-      transform: f.transform || [],
-      format: f.format || "",
-    }));
+    const rows: MappingRow[] = t.fields.map((f) => {
+      // Convert value_map object back to array of {from, to}
+      const vmArr: { from: string; to: string }[] = [];
+      if (f.value_map) {
+        for (const [k, v] of Object.entries(f.value_map)) {
+          vmArr.push({ from: k, to: v });
+        }
+      }
+      return {
+        sourceKey: f.keywords?.[0] || f.label,
+        targetField: f.key,
+        extractionMode: f.extraction_mode || "auto",
+        transform: f.transform || [],
+        format: f.format || "",
+        valueMap: vmArr,
+      };
+    });
     setMappings(rows);
     setLandmarks(t.detection_landmarks ? t.detection_landmarks.map((l) => ({ ...l })) : []);
     setBuilderOpen(true);
@@ -229,6 +241,7 @@ export default function OcrTemplatesPage() {
             extractionMode: "auto" as const,
             transform: [] as TransformType[],
             format: "",
+            valueMap: [],
           }))
         );
       }
@@ -242,7 +255,7 @@ export default function OcrTemplatesPage() {
   /* ── Mapping row operations ─────────────────── */
 
   const addMappingRow = () => {
-    setMappings((prev) => [...prev, { sourceKey: "", targetField: "", extractionMode: "auto", transform: [], format: "" }]);
+    setMappings((prev) => [...prev, { sourceKey: "", targetField: "", extractionMode: "auto", transform: [], format: "", valueMap: [] }]);
   };
 
   const removeMappingRow = (index: number) => {
@@ -291,15 +304,23 @@ export default function OcrTemplatesPage() {
     setSuccess(null);
 
     // Convert mapping rows to field definitions
-    const fields = validMappings.map((m) => ({
-      key: m.targetField,
-      label: m.sourceKey,
-      keywords: [m.sourceKey],
-      regex: null,
-      extraction_mode: m.extractionMode,
-      ...(m.transform.length > 0 ? { transform: m.transform } : {}),
-      ...(m.format ? { format: m.format } : {}),
-    }));
+    const fields = validMappings.map((m) => {
+      // Convert valueMap array to Record<string,string>
+      const vmObj: Record<string, string> = {};
+      for (const v of m.valueMap) {
+        if (v.from.trim()) vmObj[v.from.trim()] = v.to.trim();
+      }
+      return {
+        key: m.targetField,
+        label: m.sourceKey,
+        keywords: [m.sourceKey],
+        regex: null,
+        extraction_mode: m.extractionMode,
+        ...(m.transform.length > 0 ? { transform: m.transform } : {}),
+        ...(m.format ? { format: m.format } : {}),
+        ...(Object.keys(vmObj).length > 0 ? { value_map: vmObj } : {}),
+      };
+    });
 
     const body = {
       name: templateName,
@@ -809,6 +830,82 @@ export default function OcrTemplatesPage() {
                                 ))}
                               </select>
                             </div>
+                          </div>
+
+                          {/* Value Map — custom key→value transforms */}
+                          <div className="mt-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] text-muted font-medium">กำหนด mapping ค่า:</span>
+                              <button
+                                onClick={() => {
+                                  setMappings((prev) => {
+                                    const updated = [...prev];
+                                    updated[i] = {
+                                      ...updated[i],
+                                      valueMap: [...updated[i].valueMap, { from: "", to: "" }],
+                                    };
+                                    return updated;
+                                  });
+                                }}
+                                className="text-[10px] text-primary hover:underline"
+                              >
+                                + เพิ่ม mapping
+                              </button>
+                            </div>
+                            {row.valueMap.length > 0 && (
+                              <div className="space-y-1">
+                                {row.valueMap.map((vm, vi) => (
+                                  <div key={vi} className="flex items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={vm.from}
+                                      onChange={(e) => {
+                                        setMappings((prev) => {
+                                          const updated = [...prev];
+                                          const vmArr = [...updated[i].valueMap];
+                                          vmArr[vi] = { ...vmArr[vi], from: e.target.value };
+                                          updated[i] = { ...updated[i], valueMap: vmArr };
+                                          return updated;
+                                        });
+                                      }}
+                                      placeholder="ค่าที่อ่านได้"
+                                      className="w-32 px-2 py-1 bg-background border border-border rounded text-[11px]"
+                                    />
+                                    <span className="text-[10px] text-muted">→</span>
+                                    <input
+                                      type="text"
+                                      value={vm.to}
+                                      onChange={(e) => {
+                                        setMappings((prev) => {
+                                          const updated = [...prev];
+                                          const vmArr = [...updated[i].valueMap];
+                                          vmArr[vi] = { ...vmArr[vi], to: e.target.value };
+                                          updated[i] = { ...updated[i], valueMap: vmArr };
+                                          return updated;
+                                        });
+                                      }}
+                                      placeholder="แปลงเป็น"
+                                      className="w-40 px-2 py-1 bg-background border border-border rounded text-[11px]"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        setMappings((prev) => {
+                                          const updated = [...prev];
+                                          updated[i] = {
+                                            ...updated[i],
+                                            valueMap: updated[i].valueMap.filter((_, j) => j !== vi),
+                                          };
+                                          return updated;
+                                        });
+                                      }}
+                                      className="p-0.5 rounded hover:bg-danger/10 text-muted hover:text-danger"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))

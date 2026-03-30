@@ -37,10 +37,21 @@ interface OcrResultItem {
   raw_text: string | null;
   extracted_data: Record<string, string | null> | null;
   ocr_confidence: number | null;
-  field_mapping?: { id: number; name: string } | null;
+  field_mapping?: { id: number; name: string; fields?: { key: string; label: string }[] } | null;
   status: "pending" | "processing" | "completed" | "failed";
   error_message: string | null;
   created_at: string;
+}
+
+/** Build a key→label lookup from field_mapping.fields */
+function getFieldLabels(r: OcrResultItem): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (r.field_mapping?.fields) {
+    for (const f of r.field_mapping.fields) {
+      map[f.key] = f.label;
+    }
+  }
+  return map;
 }
 
 interface SaveForm {
@@ -775,6 +786,7 @@ export default function OcrProcessPage() {
 
                   {/* Extracted fields — inline mini grid */}
                   {r.status === "completed" && r.extracted_data && (() => {
+                    const labels = getFieldLabels(r);
                     const filled = Object.entries(r.extracted_data!).filter(([, v]) => v);
                     return filled.length > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -783,7 +795,7 @@ export default function OcrProcessPage() {
                             key={k}
                             className="inline-flex items-center gap-1 px-2 py-0.5 bg-background border border-border rounded text-xs"
                           >
-                            <span className="text-muted">{k.replace(/_/g, " ")}:</span>
+                            <span className="text-muted">{labels[k] || k.replace(/_/g, " ")}:</span>
                             <span className="font-medium">{v}</span>
                           </span>
                         ))}
@@ -918,10 +930,11 @@ export default function OcrProcessPage() {
 
               {/* Extracted Data — mapped text view */}
               {viewingResult.extracted_data && (() => {
+                const labels = getFieldLabels(viewingResult);
                 const entries = Object.entries(viewingResult.extracted_data!);
                 const filled = entries.filter(([, v]) => v);
                 const mappedText = entries
-                  .map(([key, value]) => `${key.replace(/_/g, " ")} => ${value ?? "—"}`)
+                  .map(([key, value]) => `${labels[key] || key.replace(/_/g, " ")} => ${value ?? "—"}`)
                   .join("\n");
                 return (
                   <div>
