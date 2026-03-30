@@ -275,7 +275,7 @@ export default function OcrTemplatesPage() {
     if (mappings.some((m) => m.sourceKey === pair.key)) return;
     setMappings((prev) => [
       ...prev,
-      { sourceKey: pair.key, targetField: toSnakeCase(pair.key), extractionMode: "auto", transform: [], format: "" },
+      { sourceKey: pair.key, targetField: toSnakeCase(pair.key), extractionMode: "auto", transform: [], format: "", valueMap: [] },
     ]);
   };
 
