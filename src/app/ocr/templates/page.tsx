@@ -53,7 +53,7 @@ const FORMAT_OPTIONS: { value: string; label: string }[] = [
 interface MappingRow {
   sourceKey: string;
   targetField: string;
-  extractionMode: "auto" | "same_line" | "next_line" | "prev_line";
+  extractionMode: "auto" | "same_line" | "next_line" | "prev_line" | "mrz";
   transform: TransformType[];
   format: string;
   valueMap: { from: string; to: string }[];
@@ -66,7 +66,7 @@ interface FieldDef {
   label: string;
   keywords: string[];
   regex: string | null;
-  extraction_mode: "auto" | "same_line" | "next_line" | "prev_line";
+  extraction_mode: "auto" | "same_line" | "next_line" | "prev_line" | "mrz";
   transform?: TransformType[];
   format?: string;
   value_map?: Record<string, string>;
@@ -752,6 +752,7 @@ export default function OcrTemplatesPage() {
                           <option value="same_line">บรรทัดเดียวกัน</option>
                           <option value="next_line">บรรทัดถัดไป</option>
                           <option value="prev_line">บรรทัดก่อนหน้า</option>
+                          <option value="mrz">MRZ</option>
                         </select>
                       )}
                       <button
@@ -848,6 +849,7 @@ export default function OcrTemplatesPage() {
                             <option value="same_line">บรรทัดเดียวกัน</option>
                             <option value="next_line">บรรทัดถัดไป</option>
                             <option value="prev_line">บรรทัดก่อนหน้า</option>
+                            <option value="mrz">MRZ</option>
                           </select>
 
                           {/* Remove button */}
