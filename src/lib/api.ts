@@ -67,7 +67,7 @@ export async function apiUploadStream(
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
-      Accept: "text/plain",
+      Accept: "text/event-stream",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: formData,
