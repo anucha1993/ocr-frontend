@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Upload,
   FileText,
@@ -267,8 +267,11 @@ export default function OcrProcessPage() {
 
   // ── Zoho comparison ──
   const [zohoCheckEnabled, setZohoCheckEnabled] = useState(false);
+  const zohoCheckRef = useRef(false);
+  useEffect(() => { zohoCheckRef.current = zohoCheckEnabled; }, [zohoCheckEnabled]);
   const [zohoMap, setZohoMap] = useState<Map<number, { zoho: ZohoRecord; mismatches: FieldMismatch[] }>>(new Map());
   const [zohoLoadingIds, setZohoLoadingIds] = useState<Set<number>>(new Set());
+  const [zohoNotFound, setZohoNotFound] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     apiFetch("/ocr/field-mappings")
@@ -315,12 +318,17 @@ export default function OcrProcessPage() {
     setError(null);
     setResults([]);
     setBatchId(null);
+    setZohoMap(new Map());
+    setZohoNotFound(new Set());
     setProgress({ file: "", fileIndex: 0, fileTotal: files.length, page: 0, totalPages: 0, phase: "uploading" });
 
     const formData = new FormData();
     files.forEach((f) => formData.append("files[]", f));
     if (selectedMappingId) {
       formData.append("field_mapping_id", selectedMappingId);
+    }
+    if (zohoCheckRef.current) {
+      formData.append("zoho_check", "1");
     }
 
     try {
@@ -346,16 +354,40 @@ export default function OcrProcessPage() {
               phase: "extracting",
             }));
             break;
+          case "ocr_start":
+            setProgress((p) => ({
+              ...p!,
+              totalPages: ev.total_pages as number,
+              page: 0,
+              phase: "ocr",
+            }));
+            break;
           case "page_done":
           case "page_skip":
             setProgress((p) => ({
               ...p!,
               page: ev.page as number,
               totalPages: ev.total as number,
+              phase: "extracting",
             }));
             // Append result immediately for real-time display
             if (ev.event === "page_done" && ev.result) {
-              setResults((prev) => [...prev, ev.result as OcrResultItem]);
+              const pageResult = ev.result as OcrResultItem;
+              setResults((prev) => [...prev, pageResult]);
+              // Handle Zoho data from backend stream (no separate API call needed)
+              if (zohoCheckRef.current && pageResult.status === "completed" && pageResult.extracted_data) {
+                if (ev.zoho_data) {
+                  const zoho = ev.zoho_data as ZohoRecord;
+                  const mismatches = compareOcrWithZoho(pageResult.extracted_data!, zoho);
+                  setZohoMap((prev) => {
+                    const next = new Map(prev);
+                    next.set(pageResult.id, { zoho, mismatches });
+                    return next;
+                  });
+                } else if (ev.zoho_data === null) {
+                  setZohoNotFound((s) => new Set(s).add(pageResult.id));
+                }
+              }
             }
             break;
           case "file_error":
@@ -371,14 +403,6 @@ export default function OcrProcessPage() {
             setAutoDetected((ev.auto_detected as boolean) || false);
             setFiles([]);
             setProgress((p) => ({ ...p!, phase: "done" }));
-            // Zoho comparison: trigger after complete
-            if (zohoCheckEnabled) {
-              setResults((prev) => {
-                // Defer Zoho lookups
-                setTimeout(() => runZohoComparison(prev), 100);
-                return prev;
-              });
-            }
             // Pre-fill save form
             setSaveForm((f) => ({
               ...f,
@@ -396,42 +420,42 @@ export default function OcrProcessPage() {
     }
   };
 
-  /** Search Zoho for each result and compare */
-  const runZohoComparison = async (items: OcrResultItem[]) => {
-    const completed = items.filter(
-      (r) => r.status === "completed" && r.extracted_data
-    );
-    for (const r of completed) {
-      const ppNo =
-        r.extracted_data?.passport_no ||
-        r.extracted_data?.passport_number ||
-        "";
-      if (!ppNo.trim()) continue;
+  /** Search Zoho for a single result and compare */
+  const runZohoForResult = async (r: OcrResultItem) => {
+    const ppNo =
+      r.extracted_data?.passport_no ||
+      r.extracted_data?.passport_number ||
+      r.extracted_data?.coi_number ||
+      r.extracted_data?.document_number ||
+      "";
+    if (!ppNo.trim()) return;
 
-      setZohoLoadingIds((s) => new Set(s).add(r.id));
-      try {
-        const res = await apiFetch(
-          `/foreign-data/search?passport_no=${encodeURIComponent(ppNo.trim())}`
-        );
-        const json = await res.json();
-        if (json.success && json.data?.length > 0) {
-          const zoho = json.data[0] as ZohoRecord;
-          const mismatches = compareOcrWithZoho(r.extracted_data!, zoho);
-          setZohoMap((prev) => {
-            const next = new Map(prev);
-            next.set(r.id, { zoho, mismatches });
-            return next;
-          });
-        }
-      } catch {
-        // silently skip
-      } finally {
-        setZohoLoadingIds((s) => {
-          const next = new Set(s);
-          next.delete(r.id);
+    setZohoLoadingIds((s) => new Set(s).add(r.id));
+    try {
+      const res = await apiFetch(
+        `/foreign-data/search?passport_no=${encodeURIComponent(ppNo.trim())}`
+      );
+      const json = await res.json();
+      if (json.success && json.data?.length > 0) {
+        const zoho = json.data[0] as ZohoRecord;
+        const mismatches = compareOcrWithZoho(r.extracted_data!, zoho);
+        setZohoMap((prev) => {
+          const next = new Map(prev);
+          next.set(r.id, { zoho, mismatches });
           return next;
         });
+      } else {
+        // No data found in Zoho
+        setZohoNotFound((s) => new Set(s).add(r.id));
       }
+    } catch {
+      // silently skip
+    } finally {
+      setZohoLoadingIds((s) => {
+        const next = new Set(s);
+        next.delete(r.id);
+        return next;
+      });
     }
   };
 
@@ -499,6 +523,21 @@ export default function OcrProcessPage() {
 
   const completedCount = results.filter((r) => r.status === "completed").length;
   const failedCount = results.filter((r) => r.status === "failed").length;
+
+  // Compute table columns from all results
+  const tableColumns = useMemo(() => {
+    const colMap = new Map<string, string>();
+    for (const r of results) {
+      if (!r.extracted_data) continue;
+      const labels = getFieldLabels(r);
+      for (const key of Object.keys(r.extracted_data)) {
+        if (!colMap.has(key)) {
+          colMap.set(key, labels[key] || key.replace(/_/g, " "));
+        }
+      }
+    }
+    return Array.from(colMap.entries()); // [[key, label], ...]
+  }, [results]);
 
   return (
     <div className="space-y-6">
@@ -651,13 +690,15 @@ export default function OcrProcessPage() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">
                 {progress.phase === "uploading" && "กำลังอัพโหลดไฟล์..."}
-                {progress.phase === "ocr" && `อ่าน: ${progress.file} (ไฟล์ ${progress.fileIndex}/${progress.fileTotal})`}
-                {progress.phase === "extracting" && `สกัดข้อมูล: ${progress.file} — หน้า ${progress.page}/${progress.totalPages}`}
+                {progress.phase === "ocr" && progress.totalPages > 0
+                  ? `อ่าน OCR: ${progress.file} (${progress.totalPages} หน้า)`
+                  : progress.phase === "ocr" && `อ่าน: ${progress.file} (ไฟล์ ${progress.fileIndex}/${progress.fileTotal})`}
+                {progress.phase === "extracting" && `กำลังอ่าน: ${progress.file} — หน้า ${progress.page}/${progress.totalPages}`}
               </p>
               <p className="text-xs text-muted mt-0.5">
                 {progress.phase === "uploading" && "ส่งไฟล์ไปยังเซิร์ฟเวอร์..."}
                 {progress.phase === "ocr" && "ประมวล OCR ด้วย Google Cloud Vision API..."}
-                {progress.phase === "extracting" && `ไฟล์ ${progress.fileIndex}/${progress.fileTotal}`}
+                {progress.phase === "extracting" && `ไฟล์ ${progress.fileIndex}/${progress.fileTotal} — ผลลัพธ์แสดงทันทีหลังอ่านเสร็จแต่ละหน้า`}
               </p>
             </div>
           </div>
@@ -742,140 +783,188 @@ export default function OcrProcessPage() {
             )}
           </div>
 
-          <div className="divide-y divide-border">
-            {results.map((r) => (
-              <div
-                key={r.id}
-                className="animate-fade-in flex items-start gap-4 px-6 py-4 hover:bg-background/50 transition-colors"
-              >
-                {/* Status Icon */}
-                <div className="mt-0.5 shrink-0">
-                  {r.status === "completed" ? (
-                    <CheckCircle className="w-5 h-5 text-success" />
-                  ) : r.status === "failed" ? (
-                    <XCircle className="w-5 h-5 text-danger" />
-                  ) : (
-                    <Loader2 className="w-5 h-5 text-muted animate-spin" />
+          {/* Table view of results */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-background/50 border-b border-border">
+                  <th className="text-left px-3 py-2.5 font-medium text-muted whitespace-nowrap w-8">#</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted whitespace-nowrap">ไฟล์</th>
+                  <th className="text-center px-3 py-2.5 font-medium text-muted whitespace-nowrap w-16">สถานะ</th>
+                  {tableColumns.map(([key, label]) => (
+                      <th key={key} className="text-left px-3 py-2.5 font-medium text-muted whitespace-nowrap">
+                        {label}
+                      </th>
+                    ))}
+                  {zohoCheckEnabled && (
+                    <th className="text-center px-3 py-2.5 font-medium text-muted whitespace-nowrap">Zoho</th>
                   )}
-                </div>
+                  <th className="text-center px-3 py-2.5 font-medium text-muted whitespace-nowrap w-10"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {results.map((r, idx) => {
+                  const zr = zohoCheckEnabled ? zohoMap.get(r.id) : undefined;
+                  const isZohoLoading = zohoCheckEnabled && zohoLoadingIds.has(r.id);
+                  const isZohoNotFound = zohoCheckEnabled && zohoNotFound.has(r.id);
+                  const totalColSpan = 3 + tableColumns.length + (zohoCheckEnabled ? 1 : 0) + 1;
 
-                {/* Main Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold truncate max-w-xs">{r.original_filename}</p>
-                    <span className="text-xs text-muted">
-                      {r.file_type.toUpperCase()}
-                      {r.page_number ? ` • หน้า ${r.page_number}/${r.page_count}` : ` • ${r.page_count} หน้า`}
-                    </span>
-                    {/* Confidence badge */}
-                    {r.ocr_confidence !== null && r.ocr_confidence !== undefined && (
-                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                        r.ocr_confidence >= 0.95 ? "bg-success/10 text-success" :
-                        r.ocr_confidence >= 0.80 ? "bg-warning/10 text-warning" :
-                                                    "bg-danger/10 text-danger"
-                      }`}>
-                        {Math.round(r.ocr_confidence * 100)}%
-                      </span>
-                    )}
-                    {autoDetected && r.field_mapping && (
-                      <span className="text-xs px-1.5 py-0.5 bg-success/10 text-success rounded">
-                        {r.field_mapping.name}
-                      </span>
-                    )}
-                  </div>
+                  return (
+                    <React.Fragment key={r.id}>
+                    <tr
+                      className="animate-fade-in hover:bg-background/50 transition-colors"
+                    >
+                      {/* Row number */}
+                      <td className="px-3 py-2.5 text-muted text-xs">{idx + 1}</td>
 
-                  {/* Extracted fields — inline mini grid */}
-                  {r.status === "completed" && r.extracted_data && (() => {
-                    const labels = getFieldLabels(r);
-                    const filled = Object.entries(r.extracted_data!).filter(([, v]) => v);
-                    return filled.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {filled.slice(0, 6).map(([k, v]) => (
-                          <span
-                            key={k}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-background border border-border rounded text-xs"
-                          >
-                            <span className="text-muted">{labels[k] || k.replace(/_/g, " ")}:</span>
-                            <span className="font-medium">{v}</span>
+                      {/* File info */}
+                      <td className="px-3 py-2.5 max-w-[200px]">
+                        <div className="flex items-center gap-2">
+                          {r.status === "completed" ? (
+                            <CheckCircle className="w-4 h-4 text-success shrink-0" />
+                          ) : r.status === "failed" ? (
+                            <XCircle className="w-4 h-4 text-danger shrink-0" />
+                          ) : (
+                            <Loader2 className="w-4 h-4 text-muted animate-spin shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate">{r.original_filename}</p>
+                            <p className="text-[10px] text-muted">
+                              {r.file_type.toUpperCase()}
+                              {r.page_number ? ` • p.${r.page_number}/${r.page_count}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Status / confidence */}
+                      <td className="px-3 py-2.5 text-center">
+                        {r.status === "completed" && r.ocr_confidence != null ? (
+                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                            r.ocr_confidence >= 0.95 ? "bg-success/10 text-success" :
+                            r.ocr_confidence >= 0.80 ? "bg-warning/10 text-warning" :
+                                                        "bg-danger/10 text-danger"
+                          }`}>
+                            {Math.round(r.ocr_confidence * 100)}%
                           </span>
-                        ))}
-                        {filled.length > 6 && (
-                          <span className="text-xs text-muted px-1 py-0.5">+{filled.length - 6} เพิ่มเติม</span>
+                        ) : r.status === "failed" ? (
+                          <span className="text-xs text-danger" title={r.error_message || ""}>ผิดพลาด</span>
+                        ) : (
+                          <Loader2 className="w-3.5 h-3.5 text-muted animate-spin inline-block" />
                         )}
-                      </div>
-                    ) : null;
-                  })()}
+                      </td>
 
-                  {r.status === "failed" && r.error_message && (
-                    <p className="text-xs text-danger mt-1">{r.error_message}</p>
-                  )}
+                      {/* Data columns */}
+                      {tableColumns.map(([key]) => {
+                        const val = r.extracted_data?.[key];
+                        // Check Zoho mismatch for this field
+                        const zr = zohoMap.get(r.id);
+                        const mismatch = zr?.mismatches.find((m) => m.field === key);
+                        return (
+                          <td
+                            key={key}
+                            className={`px-3 py-2.5 text-xs whitespace-nowrap max-w-[180px] truncate ${
+                              mismatch ? "bg-danger/5 text-danger font-medium" : ""
+                            }`}
+                            title={mismatch ? `Zoho: ${mismatch.system}` : val || ""}
+                          >
+                            {val || <span className="text-muted">—</span>}
+                          </td>
+                        );
+                      })}
 
-                  {/* Zoho comparison result for this item */}
-                  {zohoCheckEnabled && r.status === "completed" && (() => {
-                    const zr = zohoMap.get(r.id);
-                    const isLoading = zohoLoadingIds.has(r.id);
-                    if (isLoading) return (
-                      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> ตรวจสอบ Zoho...
-                      </div>
-                    );
-                    if (!zr) return null;
-                    if (zr.mismatches.length === 0) return (
-                      <div className="mt-2 flex items-center gap-1.5 text-xs text-success">
-                        <ShieldCheck className="w-3.5 h-3.5" /> ข้อมูลตรงกับ Zoho
-                      </div>
-                    );
-                    return (
-                      <div className="mt-2">
-                        <div className="flex items-center gap-1.5 text-xs text-danger font-medium mb-1">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          พบข้อมูลไม่ตรง {zr.mismatches.length} รายการ
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {zr.mismatches.map((m) => (
-                            <span key={m.field} className="inline-flex items-center gap-1 px-2 py-0.5 bg-danger/10 border border-danger/20 rounded text-xs text-danger">
-                              <span className="font-medium">{m.label}:</span>
-                              <span>{m.scanned}</span>
-                              <span className="text-muted">→</span>
-                              <span>{m.system}</span>
+                      {/* Zoho status */}
+                      {zohoCheckEnabled && (
+                        <td className="px-3 py-2.5 text-center">
+                          {isZohoLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin inline-block text-muted" />
+                          ) : isZohoNotFound ? (
+                            <span className="text-xs text-warning whitespace-nowrap" title="ไม่พบข้อมูลใน Zoho">
+                              <AlertTriangle className="w-3.5 h-3.5 inline-block" /> ไม่พบ
                             </span>
-                          ))}
-                        </div>
+                          ) : !zr ? (
+                            <span className="text-muted">—</span>
+                          ) : zr.mismatches.length === 0 ? (
+                            <span className="text-xs text-success whitespace-nowrap">
+                              <ShieldCheck className="w-4 h-4 inline-block" /> ตรงกัน
+                            </span>
+                          ) : (
+                            <span className="text-xs text-danger whitespace-nowrap">
+                              <AlertTriangle className="w-3.5 h-3.5 inline-block" /> ไม่ตรง {zr.mismatches.length} รายการ
+                            </span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* View detail */}
+                      <td className="px-3 py-2.5 text-center">
+                        {r.status === "completed" && (
+                          <button
+                            onClick={() => {
+                              setShowRawText(false);
+                              setViewingResult(r);
+                            }}
+                            className="p-1 rounded hover:bg-primary/10 text-muted hover:text-primary transition-colors"
+                            title="ดูรายละเอียด"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Zoho comparison detail row */}
+                    {zohoCheckEnabled && zr && zr.mismatches.length > 0 && (
+                      <tr className="bg-danger/5 border-t-0">
+                        <td colSpan={totalColSpan} className="px-4 py-2">
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                            <span className="font-medium text-danger">ข้อมูลไม่ตรงกับ Zoho:</span>
+                            {zr.mismatches.map((m) => (
+                              <span key={m.field} className="inline-flex gap-1">
+                                <span className="text-muted">{m.label}:</span>
+                                <span className="line-through text-danger/70">{m.scanned || "—"}</span>
+                                <span className="text-muted">→</span>
+                                <span className="font-medium text-foreground">{m.system || "—"}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {zohoCheckEnabled && isZohoNotFound && (
+                      <tr className="bg-warning/5 border-t-0">
+                        <td colSpan={totalColSpan} className="px-4 py-2">
+                          <span className="text-xs text-warning">
+                            <AlertTriangle className="w-3 h-3 inline-block mr-1" />
+                            ไม่พบข้อมูลบุคคลนี้ในระบบ Zoho CRM
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* Live processing indicator */}
+                {processing && (
+                  <tr className="bg-primary/5">
+                    <td colSpan={999} className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                        <span className="text-sm text-primary">
+                          {progress?.phase === "ocr"
+                            ? `กำลังอ่าน OCR: ${progress.file}`
+                            : progress?.phase === "extracting"
+                            ? `สกัดข้อมูลหน้า ${progress?.page}/${progress?.totalPages}: ${progress?.file}`
+                            : "กำลังประมวลผล..."
+                          }
+                        </span>
                       </div>
-                    );
-                  })()}
-                </div>
-
-                {/* View Button */}
-                {r.status === "completed" && (
-                  <button
-                    onClick={() => {
-                      setShowRawText(false);
-                      setViewingResult(r);
-                    }}
-                    className="p-2 rounded-lg hover:bg-primary/10 text-muted hover:text-primary transition-colors shrink-0"
-                    title="ดูรายละเอียด"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
+                    </td>
+                  </tr>
                 )}
-              </div>
-            ))}
-
-            {/* Live placeholder while still processing */}
-            {processing && (
-              <div className="flex items-center gap-4 px-6 py-4 bg-primary/5">
-                <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
-                <p className="text-sm text-primary">
-                  {progress?.phase === "ocr"
-                    ? `กำลังอ่าน OCR: ${progress.file}`
-                    : progress?.phase === "extracting"
-                    ? `สกัดข้อมูลหน้า ${progress?.page}/${progress?.totalPages}: ${progress?.file}`
-                    : "กำลังประมวลผล..."
-                  }
-                </p>
-              </div>
-            )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
