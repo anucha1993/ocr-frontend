@@ -629,14 +629,17 @@ export default function IdCardReaderPage() {
               parsed = { ...emptyDoc, ...ppData, mrz1: ppText };
             } else {
               // No mapping found — show raw and try generic parse
+              // MRZ order: DocType#Country#Surname#GivenNames#DocNo#...
               const parts = ppText.split("#");
+              const mrzSurname = (parts[2] || "").trim();
+              const mrzGiven = (parts[3] || "").trim();
               parsed = {
                 ...emptyDoc,
                 issue_place: (parts[1] || "").trim(),
-                firstname: (parts[2] || "").trim(),
-                firstname_en: (parts[2] || "").trim(),
-                lastname: (parts[3] || "").trim(),
-                lastname_en: (parts[3] || "").trim(),
+                firstname: mrzGiven || mrzSurname,
+                firstname_en: mrzGiven || mrzSurname,
+                lastname: mrzGiven ? mrzSurname : "",
+                lastname_en: mrzGiven ? mrzSurname : "",
                 passport_no: (parts[4] || "").trim(),
                 nationality: (parts[5] || "").trim(),
                 birthdate: formatPPDate((parts[6] || "").trim()),
@@ -661,8 +664,12 @@ export default function IdCardReaderPage() {
               parsed.firstname = fallbackParts[3].trim();
             }
             if (!parsed.lastname_en && fallbackParts[2]) {
-              parsed.lastname_en = fallbackParts[2].trim();
-              parsed.lastname = fallbackParts[2].trim();
+              // Don't duplicate: skip if surname equals existing firstname (e.g. Myanmar CI with no given name)
+              const fbSurname = fallbackParts[2].trim();
+              if (fbSurname !== parsed.firstname_en) {
+                parsed.lastname_en = fbSurname;
+                parsed.lastname = fbSurname;
+              }
             }
             if (!parsed.birthdate && fallbackParts[6]) {
               parsed.birthdate = formatPPDate(fallbackParts[6].trim());
