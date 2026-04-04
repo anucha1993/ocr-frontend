@@ -15,6 +15,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { apiFetch, API_BASE } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 interface OcrResultItem {
   id: number;
@@ -48,6 +49,8 @@ export default function OcrResultsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [viewingResult, setViewingResult] = useState<OcrResultItem | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const fetchResults = async (p = page) => {
     setLoading(true);
@@ -255,13 +258,15 @@ export default function OcrResultsPage() {
                               </button>
                             </>
                           )}
-                          <button
-                            onClick={() => handleDelete(r.id)}
-                            className="p-1.5 rounded hover:bg-danger/10 text-muted hover:text-danger"
-                            title="ลบ"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleDelete(r.id)}
+                              className="p-1.5 rounded hover:bg-danger/10 text-muted hover:text-danger"
+                              title="ลบ"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
