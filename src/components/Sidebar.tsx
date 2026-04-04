@@ -13,8 +13,8 @@ import { useAuth } from "@/context/AuthContext";
 
 // ────────────── ข้อมูลแรงงาน ──────────────
 const labourNav = [
-  { name: "ข้อมูลแรงงานต่างด้าว", href: "/foreign-data", icon: Users },
-  { name: "ค้นหาข้อมูลแรงงาน", href: "/foreign-data/search", icon: Search },
+  // { name: "ข้อมูลแรงงานต่างด้าว", href: "/foreign-data", icon: Users },
+  // { name: "ค้นหาข้อมูลแรงงาน", href: "/foreign-data/search", icon: Search },
   { name: "รายการบันทึก", href: "/labours", icon: ClipboardList },
 ];
 

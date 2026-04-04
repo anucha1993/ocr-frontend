@@ -207,7 +207,7 @@ export default function DashboardPage() {
             { label: "ประมวลผล OCR ใหม่",    href: "/ocr",           icon: ScanSearch,  color: "text-primary" },
             { label: "ดูผลลัพธ์ OCR",        href: "/ocr/results",  icon: CheckCircle, color: "text-success" },
             { label: "รายการแรงงาน",         href: "/labours",      icon: PackageOpen, color: "text-info"    },
-            { label: "ข้อมูลแรงงานต่างด้าว", href: "/foreign-data", icon: Users,       color: "text-warning" },
+            // { label: "ข้อมูลแรงงานต่างด้าว", href: "/foreign-data", icon: Users,       color: "text-warning" },
           ].map((item) => (
             <Link
               key={item.href}

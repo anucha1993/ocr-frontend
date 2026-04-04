@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  EyeOff,
   X,
   Search,
   Trash2,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 interface Labour {
   id: number;
@@ -48,6 +50,8 @@ interface Batch {
   note: string | null;
   total_count: number;
   labours_count: number;
+  visibility: "private" | "public";
+  user_id: number;
   created_at: string;
   labours?: Labour[];
 }
@@ -90,6 +94,8 @@ export default function LaboursPage() {
   const [loadingBatch, setLoadingBatch] = useState<number | null>(null);
   const [selected, setSelected] = useState<Labour | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -260,13 +266,40 @@ export default function LaboursPage() {
                     <Download className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteBatch(batch.id); }}
-                    disabled={deleting === batch.id}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition-colors disabled:opacity-50"
-                    title="ลบชุด"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const next = batch.visibility === "public" ? "private" : "public";
+                      try {
+                        const res = await apiFetch(`/scan-batches/${batch.id}/visibility`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ visibility: next }),
+                        });
+                        if (!res.ok) throw new Error();
+                        fetchBatches();
+                      } catch {
+                        alert("เปลี่ยนสิทธิ์ไม่สำเร็จ");
+                      }
+                    }}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      batch.visibility === "public"
+                        ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                        : "hover:bg-slate-100 text-slate-400"
+                    }`}
+                    title={batch.visibility === "public" ? "สาธารณะ — คลิกเปลี่ยนเป็นส่วนตัว" : "ส่วนตัว — คลิกเปลี่ยนเป็นสาธารณะ"}
                   >
-                    {deleting === batch.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {batch.visibility === "public" ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                   </button>
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteBatch(batch.id); }}
+                      disabled={deleting === batch.id}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition-colors disabled:opacity-50"
+                      title="ลบชุด"
+                    >
+                      {deleting === batch.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  )}
                   {expandedBatch === batch.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                 </div>
               </div>
