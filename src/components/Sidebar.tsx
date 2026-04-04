@@ -7,7 +7,7 @@ import {
   Settings, LayoutDashboard, Server, GitBranch, TestTube, ChevronDown,
   Users, CreditCard, Scan, Map, ClipboardList, Search, UserCog,
   ScanSearch, FileText, Settings2, FileCog, Cloud, IdCard, Bell, Shield,
-  Calculator,
+  Calculator, BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -127,6 +127,10 @@ export default function Sidebar() {
         {/* ── แจ้งเตือน ── */}
         <SectionLabel label="แจ้งเตือน" />
         <NavLink href="/notifications" icon={Bell} name="การแจ้งเตือน" />
+
+        {/* ── คู่มือ ── */}
+        <SectionLabel label="คู่มือ" />
+        <NavLink href="/manual" icon={BookOpen} name="คู่มือการใช้งาน" />
 
         {/* ── ตั้งค่า / ผู้ดูแล (Admin only) ── */}
         {isAdmin && (
