@@ -19,7 +19,7 @@ import {
   AlertTriangle,
   ShieldCheck,
 } from "lucide-react";
-import { apiFetch, apiUploadStream, API_BASE } from "@/lib/api";
+import { apiFetch, apiUploadStream } from "@/lib/api";
 
 interface FieldMapping {
   id: number;
@@ -490,29 +490,32 @@ export default function OcrProcessPage() {
     }
   };
 
-  const handleExport = () => {    if (!batchId) return;
-    const token = localStorage.getItem("token");
-    // Stream download via direct fetch
-    fetch(`${API_BASE}/ocr/batch/${batchId}/export`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Export failed");
-        return res.blob();
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `ocr_batch_${batchId}.xlsx`;
-        a.click();
-        URL.revokeObjectURL(url);
-      })
-      .catch(() => setError("Export failed"));
+  const handleExport = async () => {
+    if (!batchId) return;
+    try {
+      const res = await apiFetch(`/ocr/batch/${batchId}/export`, {
+        headers: {
+          Accept:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = "Export failed";
+        try { msg = JSON.parse(text).message || msg; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ocr_batch_${batchId}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === "Unauthorized") return;
+      setError(err instanceof Error ? err.message : "Export failed");
+    }
   };
 
   const formatFileSize = (bytes: number) => {

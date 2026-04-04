@@ -7,6 +7,7 @@ import {
   Settings, LayoutDashboard, Server, GitBranch, TestTube, ChevronDown,
   Users, CreditCard, Scan, Map, ClipboardList, Search, UserCog,
   ScanSearch, FileText, Settings2, FileCog, Cloud, IdCard, Bell, Shield,
+  Calculator,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -25,8 +26,11 @@ const mrzNav = [
 // ────────────── Google Cloud Vision OCR ──────────────
 const ocrNav = [
   { name: "ประมวลผล OCR", href: "/ocr", icon: ScanSearch },
-  { name: "แม่แบบ OCR", href: "/ocr/templates", icon: FileCog },
   { name: "ผลลัพธ์ OCR", href: "/ocr/results", icon: FileText },
+];
+
+const ocrAdminNav = [
+  { name: "แม่แบบ OCR", href: "/ocr/templates", icon: FileCog },
 ];
 
 // ────────────── ตั้งค่า (Admin) ──────────────
@@ -46,6 +50,7 @@ const mrzSettingsNav = [
 
 const ocrSettingsNav = [
   { name: "OCR Field Mappings", href: "/settings/ocr-fields", icon: Settings2 },
+  { name: "คำนวณวันออกบัตร", href: "/settings/document-type-rules", icon: Calculator },
 ];
 
 function NavLink({ href, icon: Icon, name, size = "md" }: { href: string; icon: React.ElementType; name: string; size?: "sm" | "md" }) {
@@ -117,6 +122,7 @@ export default function Sidebar() {
           <p className="text-[10px] text-blue-400 leading-tight">ประมวลผลผ่าน Cloud API</p>
         </div>
         {ocrNav.map((item) => <NavLink key={item.href} {...item} />)}
+        {isAdmin && ocrAdminNav.map((item) => <NavLink key={item.href} {...item} />)}
 
         {/* ── แจ้งเตือน ── */}
         <SectionLabel label="แจ้งเตือน" />

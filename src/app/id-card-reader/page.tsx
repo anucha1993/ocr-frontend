@@ -10,6 +10,7 @@ const MAX_RECONNECT = 5;
 
 interface DocumentData {
   document_type: "idcard" | "passport";
+  doc_type_code: string;
   id_card: string;
   prefix: string;
   firstname: string;
@@ -90,6 +91,37 @@ interface PPMapping {
   date_format: string;
   separator: string;
   is_active: boolean;
+}
+
+interface DocTypeRule {
+  document_type: string;
+  validity_years: number;
+  offset_days: number;
+  is_active: boolean;
+}
+
+/* ── Auto-calc issue_date from expiry_date using document type rules ── */
+function calcIssueDate(expiryStr: string, docType: string, rules: DocTypeRule[]): string {
+  if (!expiryStr || !docType) return "";
+  const dt = docType.toUpperCase();
+  // 1. Exact match
+  let rule = rules.find(r => r.document_type.toUpperCase() === dt);
+  // 2. Fallback: first character match (e.g. PN → P, PJ → P)
+  if (!rule && dt.length >= 2) {
+    rule = rules.find(r => r.document_type.toUpperCase() === dt[0]);
+  }
+  if (!rule) return "";
+  // Parse DD/MM/YYYY
+  const m = expiryStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return "";
+  const expiry = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  if (isNaN(expiry.getTime())) return "";
+  const issue = new Date(expiry);
+  issue.setFullYear(issue.getFullYear() - rule.validity_years);
+  issue.setDate(issue.getDate() - rule.offset_days);
+  const dd = String(issue.getDate()).padStart(2, "0");
+  const mm = String(issue.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${issue.getFullYear()}`;
 }
 
 /* ── Parse passport text using dynamic mapping ── */
@@ -196,6 +228,7 @@ export default function IdCardReaderPage() {
   const [autoSave, setAutoSave] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [ppMappings, setPpMappings] = useState<PPMapping[]>([]);
+  const [docTypeRules, setDocTypeRules] = useState<DocTypeRule[]>([]);
   const [wsStatus, setWsStatus] = useState<WsStatus>("disconnected");
   const [readerSelected, setReaderSelected] = useState(false);
   const [readers, setReaders] = useState<ReaderInfo[]>([]);
@@ -535,6 +568,7 @@ export default function IdCardReaderPage() {
           const textData = msg.IDAText || msg.IDText || "";
           const parsed: DocumentData = {
             document_type: "idcard",
+            doc_type_code: "",
             id_card: msg.IDNumber || "",
             prefix: "",
             firstname: "",
@@ -612,6 +646,7 @@ export default function IdCardReaderPage() {
 
           const emptyDoc: DocumentData = {
             document_type: "passport",
+            doc_type_code: "",
             id_card: "", prefix: "", firstname: "", middlename: "", lastname: "",
             firstname_en: "", middlename_en: "", lastname_en: "",
             birthdate: "", gender: "", address: "", issue_date: "", expiry_date: "",
@@ -705,6 +740,19 @@ export default function IdCardReaderPage() {
             parsed = { ...emptyDoc, ...mrzData, mrz1, mrz2 };
           }
 
+          // Auto-calc issue_date from expiry_date + document_type using rules
+          const ppDocType = ppText ? (ppText.split("#")[0] || "").trim().toUpperCase() : "";
+          if (ppDocType) {
+            parsed.document_type = "passport";
+            parsed.doc_type_code = ppDocType;
+          }
+          if (parsed.expiry_date && !parsed.issue_date && ppDocType && docTypeRules.length > 0) {
+            const calcResult = calcIssueDate(parsed.expiry_date, ppDocType, docTypeRules);
+            if (calcResult) {
+              parsed.issue_date = calcResult;
+            }
+          }
+
           setRawResponse(JSON.stringify(msg, null, 2));
           setCardData(parsed);
           addScannedRow(parsed);
@@ -794,7 +842,7 @@ export default function IdCardReaderPage() {
       readingRef.current = false;
       showMessage("error", "ได้รับข้อมูลที่ไม่ถูกต้องจากเครื่องอ่าน");
     }
-  }, [showMessage, saveCardToApi, ppMappings, addScannedRow]);
+  }, [showMessage, saveCardToApi, ppMappings, addScannedRow, docTypeRules]);
 
   // Always keep ref pointing to latest handleMessage (fixes stale closure)
   useEffect(() => { handleMessageRef.current = handleMessage; }, [handleMessage]);
@@ -865,7 +913,8 @@ export default function IdCardReaderPage() {
     Promise.all([
       apiFetch("/idcard-reader-settings").then((r) => r.json()).catch(() => null),
       apiFetch("/passport-mappings").then((r) => r.json()).catch(() => []),
-    ]).then(([settings, mappings]) => {
+      apiFetch("/document-type-rules").then((r) => r.json()).catch(() => []),
+    ]).then(([settings, mappings, rules]) => {
       if (settings) {
         const url = `ws://${settings.ws_host || "127.0.0.1"}:${settings.ws_port || 14820}/IDWAgent`;
         setWsUrl(url);
@@ -877,6 +926,9 @@ export default function IdCardReaderPage() {
       }
       if (Array.isArray(mappings)) {
         setPpMappings(mappings.filter((m: PPMapping) => m.is_active !== false));
+      }
+      if (Array.isArray(rules)) {
+        setDocTypeRules(rules.filter((r: DocTypeRule) => r.is_active));
       }
       setSettingsLoaded(true);
     });
@@ -1110,15 +1162,16 @@ export default function IdCardReaderPage() {
                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {cardData.document_type === "passport" ? (
                     <>
+                      <Field label="ประเภทเอกสาร" value={cardData.doc_type_code} onChange={(v) => updateCardField("doc_type_code", v)} />
                       <Field label="หมายเลข Passport" value={cardData.passport_no} onChange={(v) => updateCardField("passport_no", v)} />
                       <Field label="สัญชาติ" value={cardData.nationality} onChange={(v) => updateCardField("nationality", v)} />
                       <Field label="ชื่อ (Given Name)" value={cardData.firstname_en} onChange={(v) => { updateCardField("firstname_en", v); updateCardField("firstname", v); }} />
                       <Field label="นามสกุล (Surname)" value={cardData.lastname_en} onChange={(v) => { updateCardField("lastname_en", v); updateCardField("lastname", v); }} />
                       <Field label="เพศ" value={cardData.gender} onChange={(v) => updateCardField("gender", v)} />
                       <Field label="วันเกิด" value={cardData.birthdate} onChange={(v) => updateCardField("birthdate", v)} />
+                      <Field label="ประเทศผู้ออก" value={cardData.issue_place} onChange={(v) => updateCardField("issue_place", v)} />
                       <Field label="วันออกเอกสาร" value={cardData.issue_date} onChange={(v) => updateCardField("issue_date", v)} />
                       <Field label="วันหมดอายุ" value={cardData.expiry_date} onChange={(v) => updateCardField("expiry_date", v)} />
-                      <Field label="ประเทศผู้ออก" value={cardData.issue_place} onChange={(v) => updateCardField("issue_place", v)} />
                       <Field label="เลขประจำตัว (Personal No.)" value={cardData.id_card} onChange={(v) => updateCardField("id_card", v)} />
                       {(cardData.mrz1 || cardData.mrz2) && (
                         <div className="sm:col-span-2">
@@ -1222,7 +1275,7 @@ export default function IdCardReaderPage() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                             row.document_type === "passport" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
                           }`}>
-                            {row.document_type === "passport" ? "Passport" : "ID Card"}
+                            {row.document_type === "passport" ? (row.doc_type_code || "Passport") : "ID Card"}
                           </span>
                         </td>
                         <td className="py-2 px-2 font-mono text-xs">

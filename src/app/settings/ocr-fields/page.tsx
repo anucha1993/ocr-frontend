@@ -19,6 +19,7 @@ interface FieldDef {
   keywords: string[];
   regex: string | null;
   extraction_mode: "auto" | "same_line" | "next_line";
+  labour_field?: string;
 }
 
 interface LandmarkDef {
@@ -36,7 +37,29 @@ interface FieldMapping {
   created_at: string;
 }
 
-const emptyField: FieldDef = { key: "", label: "", keywords: [], regex: null, extraction_mode: "auto" };
+const emptyField: FieldDef = { key: "", label: "", keywords: [], regex: null, extraction_mode: "auto", labour_field: "" };
+
+const LABOUR_COLUMNS = [
+  { value: "", label: "— ไม่บันทึก (skip) —" },
+  { value: "id_card", label: "id_card (เลขบัตร)" },
+  { value: "passport_no", label: "passport_no (เลขหนังสือเดินทาง)" },
+  { value: "document_type", label: "document_type (ประเภทเอกสาร)" },
+  { value: "prefix", label: "prefix (คำนำหน้า)" },
+  { value: "firstname", label: "firstname (ชื่อ/ชื่อเต็ม)" },
+  { value: "middlename", label: "middlename (ชื่อกลาง)" },
+  { value: "lastname", label: "lastname (นามสกุล)" },
+  { value: "firstname_en", label: "firstname_en (ชื่อ EN)" },
+  { value: "middlename_en", label: "middlename_en (ชื่อกลาง EN)" },
+  { value: "lastname_en", label: "lastname_en (นามสกุล EN)" },
+  { value: "birthdate", label: "birthdate (วันเกิด)" },
+  { value: "gender", label: "gender (เพศ)" },
+  { value: "nationality", label: "nationality (สัญชาติ)" },
+  { value: "address", label: "address (ที่อยู่)" },
+  { value: "issue_date", label: "issue_date (วันออกบัตร)" },
+  { value: "issue_place", label: "issue_place (สถานที่ออก)" },
+  { value: "expiry_date", label: "expiry_date (วันหมดอายุ)" },
+  { value: "photo", label: "photo (รูป)" },
+];
 
 export default function OcrFieldMappingsPage() {
   const [mappings, setMappings] = useState<FieldMapping[]>([]);
@@ -251,6 +274,7 @@ export default function OcrFieldMappingsPage() {
                         <tr className="text-left text-muted border-b border-border">
                           <th className="pb-2 pr-3">Key</th>
                           <th className="pb-2 pr-3">Label</th>
+                          <th className="pb-2 pr-3">Labour Field</th>
                           <th className="pb-2 pr-3">Keywords</th>
                           <th className="pb-2 pr-3">Mode</th>
                           <th className="pb-2">Regex</th>
@@ -264,6 +288,15 @@ export default function OcrFieldMappingsPage() {
                           >
                             <td className="py-2 pr-3 font-mono">{f.key}</td>
                             <td className="py-2 pr-3">{f.label}</td>
+                            <td className="py-2 pr-3">
+                              {f.labour_field ? (
+                                <span className="px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-mono">
+                                  {f.labour_field}
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </td>
                             <td className="py-2 pr-3">
                               <div className="flex flex-wrap gap-1">
                                 {f.keywords?.map((kw, j) => (
@@ -481,6 +514,25 @@ export default function OcrFieldMappingsPage() {
                           <option value="auto">Auto (try both)</option>
                           <option value="same_line">Same Line — value on same line as label</option>
                           <option value="next_line">Next Line — value on line below label</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-muted mb-1">
+                          Labour Field (บันทึกลงคอลัมน์ไหน)
+                        </label>
+                        <select
+                          value={field.labour_field || ""}
+                          onChange={(e) =>
+                            updateField(i, { labour_field: e.target.value })
+                          }
+                          className="w-full px-3 py-1.5 bg-card border border-border rounded text-sm"
+                        >
+                          {LABOUR_COLUMNS.map((col) => (
+                            <option key={col.value} value={col.value}>
+                              {col.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     </div>

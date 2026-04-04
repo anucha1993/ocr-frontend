@@ -16,7 +16,7 @@ import {
   Download,
 } from "lucide-react";
 
-import { apiFetch, API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 interface Labour {
   id: number;
@@ -25,11 +25,17 @@ interface Labour {
   passport_no: string | null;
   prefix: string | null;
   firstname: string;
+  middlename: string | null;
   lastname: string;
+  firstname_en: string | null;
+  middlename_en: string | null;
+  lastname_en: string | null;
   birthdate: string | null;
+  gender: string | null;
   address: string | null;
   nationality: string | null;
   issue_date: string | null;
+  issue_place: string | null;
   expiry_date: string | null;
   photo: string | null;
   created_at: string;
@@ -145,10 +151,20 @@ export default function LaboursPage() {
     }
   };
 
-  const docBadge = (type: string) =>
-    type === "passport"
+  const docLabel = (type: string) => {
+    switch (type?.toUpperCase()) {
+      case "PJ": return "PJ (Passport)";
+      case "CI": return "CI (บัตร ปชช.)";
+      case "P":  return "Passport";
+      default:   return type || "-";
+    }
+  };
+  const docBadge = (type: string) => {
+    const t = type?.toUpperCase();
+    return t === "PJ" || t === "P" || t === "PASSPORT"
       ? "bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium"
       : "bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium";
+  };
 
   return (
     <div className="space-y-6">
@@ -222,9 +238,21 @@ export default function LaboursPage() {
                     {batch.labours_count} คน
                   </span>
                   <button
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      window.open(`${API_BASE}/scan-batches/${batch.id}/export`, '_blank');
+                      try {
+                        const res = await apiFetch(`/scan-batches/${batch.id}/export`, {
+                          headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+                        });
+                        if (!res.ok) throw new Error('Export failed');
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `scan_batch_${batch.id}.xlsx`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch { /* handled by apiFetch 401 redirect */ }
                     }}
                     className="p-1.5 rounded-lg hover:bg-green-50 text-green-600 transition-colors"
                     title="Export Excel"
@@ -262,7 +290,10 @@ export default function LaboursPage() {
                             <th className="px-4 py-2.5 font-medium">เลขเอกสาร</th>
                             <th className="px-4 py-2.5 font-medium">ชื่อ</th>
                             <th className="px-4 py-2.5 font-medium">สัญชาติ</th>
+                            <th className="px-4 py-2.5 font-medium">เพศ</th>
                             <th className="px-4 py-2.5 font-medium">วันเกิด</th>
+                            <th className="px-4 py-2.5 font-medium">สถานที่ออก</th>
+                            <th className="px-4 py-2.5 font-medium">วันออกเอกสาร</th>
                             <th className="px-4 py-2.5 font-medium">หมดอายุ</th>
                             <th className="px-4 py-2.5 font-medium text-center">จัดการ</th>
                           </tr>
@@ -272,12 +303,15 @@ export default function LaboursPage() {
                             <tr key={l.id} className="hover:bg-slate-50/50 transition-colors">
                               <td className="px-5 py-2.5 text-slate-400">{i + 1}</td>
                               <td className="px-4 py-2.5">
-                                <span className={docBadge(l.document_type)}>{l.document_type === "passport" ? "Passport" : "บัตร ปชช."}</span>
+                                <span className={docBadge(l.document_type)}>{docLabel(l.document_type)}</span>
                               </td>
                               <td className="px-4 py-2.5 font-mono text-xs">{l.passport_no || l.id_card || "-"}</td>
                               <td className="px-4 py-2.5 font-medium text-slate-700">{l.firstname} {l.lastname}</td>
                               <td className="px-4 py-2.5">{l.nationality || "-"}</td>
+                              <td className="px-4 py-2.5">{l.gender || "-"}</td>
                               <td className="px-4 py-2.5">{fmtDate(l.birthdate)}</td>
+                              <td className="px-4 py-2.5">{l.issue_place || "-"}</td>
+                              <td className="px-4 py-2.5">{fmtDate(l.issue_date)}</td>
                               <td className="px-4 py-2.5">{fmtDate(l.expiry_date)}</td>
                               <td className="px-4 py-2.5 text-center">
                                 <button
