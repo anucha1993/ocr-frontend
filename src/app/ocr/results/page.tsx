@@ -258,15 +258,13 @@ export default function OcrResultsPage() {
                               </button>
                             </>
                           )}
-                          {isAdmin && (
-                            <button
+                          <button
                               onClick={() => handleDelete(r.id)}
                               className="p-1.5 rounded hover:bg-danger/10 text-muted hover:text-danger"
                               title="ลบ"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
-                          )}
                         </div>
                       </td>
                     </tr>

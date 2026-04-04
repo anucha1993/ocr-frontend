@@ -290,7 +290,7 @@ export default function LaboursPage() {
                   >
                     {batch.visibility === "public" ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                   </button>
-                  {isAdmin && (
+                  {batch.user_id === user?.id && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDeleteBatch(batch.id); }}
                       disabled={deleting === batch.id}

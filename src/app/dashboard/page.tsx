@@ -106,7 +106,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Expiry alerts */}
-      {s && (s.labours.expired > 0 || s.labours.expiring_30 > 0) && (
+      {s && s.labours && (s.labours.expired > 0 || s.labours.expiring_30 > 0) && (
         <div className="space-y-2">
           {s.labours.expired > 0 && (
             <div className="flex items-center gap-3 px-4 py-3 bg-danger-light border border-danger/20 rounded-xl text-sm text-danger">
@@ -192,7 +192,7 @@ export default function DashboardPage() {
           label="หมดอายุใน 60 วัน"
           value={s?.labours.expiring_60 ?? 0}
           sub={`เร่งด่วน (30 วัน): ${s?.labours.expiring_30 ?? 0}`}
-          color={s && s.labours.expiring_30 > 0 ? "warning" : "info"}
+          color={s && s.labours && s.labours.expiring_30 > 0 ? "warning" : "info"}
           href="/labours"
         />
       </div>
