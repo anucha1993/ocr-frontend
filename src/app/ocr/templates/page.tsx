@@ -83,6 +83,8 @@ interface SavedTemplate {
   name: string;
   fields: FieldDef[];
   detection_landmarks: LandmarkDef[] | null;
+  text_start_after: string | null;
+  text_end_before: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -112,6 +114,10 @@ export default function OcrTemplatesPage() {
 
   // Detection landmarks
   const [landmarks, setLandmarks] = useState<LandmarkDef[]>([]);
+
+  // Text section filter
+  const [textStartAfter, setTextStartAfter] = useState("");
+  const [textEndBefore, setTextEndBefore] = useState("");
 
   // Save
   const [saving, setSaving] = useState(false);
@@ -154,6 +160,8 @@ export default function OcrTemplatesPage() {
     setDetectedPairs([]);
     setMappings([]);
     setLandmarks([]);
+    setTextStartAfter("");
+    setTextEndBefore("");
     setPageCount(0);
     setError(null);
     setSuccess(null);
@@ -193,6 +201,8 @@ export default function OcrTemplatesPage() {
     });
     setMappings(rows);
     setLandmarks(t.detection_landmarks ? t.detection_landmarks.map((l) => ({ ...l })) : []);
+    setTextStartAfter(t.text_start_after || "");
+    setTextEndBefore(t.text_end_before || "");
     setBuilderOpen(true);
   };
 
@@ -336,6 +346,8 @@ export default function OcrTemplatesPage() {
       name: templateName,
       fields,
       detection_landmarks: landmarks.length > 0 ? landmarks : null,
+      text_start_after: textStartAfter.trim() || null,
+      text_end_before: textEndBefore.trim() || null,
       is_active: true,
     };
 
@@ -1153,6 +1165,36 @@ export default function OcrTemplatesPage() {
                         ไม่มีจุดสังเกต — แม่แบบจะไม่ถูกตรวจจับโดยอัตโนมัติ
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Text Section Filter */}
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">✂️ กรองข้อความ (Text Section Filter)</h3>
+                  <p className="text-xs text-muted mb-3">
+                    กำหนดให้อ่านเฉพาะข้อความบางส่วน — เช่น ข้ามส่วนหัวที่ไม่เกี่ยวข้อง หรือหยุดก่อนถึงส่วนท้าย
+                  </p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-muted mb-1 block">เริ่มอ่านหลังคำ (Start After)</label>
+                      <input
+                        type="text"
+                        value={textStartAfter}
+                        onChange={(e) => setTextStartAfter(e.target.value)}
+                        placeholder='เช่น "REPUBLIC OF THE UNION OF MYANMAR"'
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted mb-1 block">หยุดอ่านก่อนคำ (End Before)</label>
+                      <input
+                        type="text"
+                        value={textEndBefore}
+                        onChange={(e) => setTextEndBefore(e.target.value)}
+                        placeholder="เช่น ข้อความที่ต้องการตัดส่วนท้าย"
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm"
+                      />
+                    </div>
                   </div>
                 </div>
 
