@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 4000",
+    "dev": "next dev --port 4000 --experimental-https",
+    "dev:http": "next dev --port 4000",
     "build": "next build",
     "start": "node server.js",
     "start:local": "next start --port 4000",

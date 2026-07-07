@@ -160,14 +160,20 @@ export default function LaboursPage() {
   const docLabel = (type: string) => {
     switch (type?.toUpperCase()) {
       case "PJ": return "PJ (Passport)";
+      case "PV": return "PV (Passport)";
+      case "PN": return "PN (Passport)";
+      case "PA": return "PA (Passport)";
       case "CI": return "CI (บัตร ปชช.)";
       case "P":  return "Passport";
+      case "PASSPORT": return "Passport";
+      case "IDCARD":   return "บัตร ปชช.";
       default:   return type || "-";
     }
   };
   const docBadge = (type: string) => {
     const t = type?.toUpperCase();
-    return t === "PJ" || t === "P" || t === "PASSPORT"
+    const isPassport = t === "P" || t === "PASSPORT" || (t?.startsWith("P") && t.length <= 3);
+    return isPassport
       ? "bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium"
       : "bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium";
   };

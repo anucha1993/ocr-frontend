@@ -6,8 +6,7 @@ import { useState } from "react";
 import {
   Settings, LayoutDashboard, Server, GitBranch, TestTube, ChevronDown,
   Users, CreditCard, Scan, Map, ClipboardList, Search, UserCog,
-  ScanSearch, FileText, Settings2, FileCog, Cloud, IdCard, Bell, Shield,
-  Calculator, BookOpen,
+  IdCard, Bell, Shield, Calculator, BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -23,15 +22,15 @@ const mrzNav = [
   { name: "อ่านเอกสาร (MRZ)", href: "/id-card-reader", icon: CreditCard },
 ];
 
-// ────────────── Google Cloud Vision OCR ──────────────
-const ocrNav = [
-  { name: "ประมวลผล OCR", href: "/ocr", icon: ScanSearch },
-  { name: "ผลลัพธ์ OCR", href: "/ocr/results", icon: FileText },
-];
-
-const ocrAdminNav = [
-  { name: "แม่แบบ OCR", href: "/ocr/templates", icon: FileCog },
-];
+// ────────────── Google Cloud Vision OCR (ซ่อนไว้ — ไม่ได้ใช้งานแล้ว) ──────────────
+// const ocrNav = [
+//   { name: "ประมวลผล OCR", href: "/ocr", icon: ScanSearch },
+//   { name: "ผลลัพธ์ OCR", href: "/ocr/results", icon: FileText },
+// ];
+//
+// const ocrAdminNav = [
+//   { name: "แม่แบบ OCR", href: "/ocr/templates", icon: FileCog },
+// ];
 
 // ────────────── ตั้งค่า (Admin) ──────────────
 const adminNav = [
@@ -43,15 +42,16 @@ const adminNav = [
 const mrzSettingsNav = [
   { name: "ตั้งค่าเครื่องอ่าน MRZ", href: "/settings/id-card-reader", icon: Scan },
   { name: "Passport Mapping", href: "/settings/passport-mappings", icon: Map },
+  { name: "คำนวณวันออกบัตร", href: "/settings/document-type-rules", icon: Calculator },
   { name: "API Providers", href: "/providers", icon: Server },
   { name: "API Endpoints", href: "/endpoints", icon: GitBranch },
   { name: "ทดสอบ API", href: "/test-api", icon: TestTube },
 ];
 
-const ocrSettingsNav = [
-  { name: "OCR Field Mappings", href: "/settings/ocr-fields", icon: Settings2 },
-  { name: "คำนวณวันออกบัตร", href: "/settings/document-type-rules", icon: Calculator },
-];
+// ────────────── OCR settings (ซ่อนไว้ — ไม่ได้ใช้งานแล้ว) ──────────────
+// const ocrSettingsNav = [
+//   { name: "OCR Field Mappings", href: "/settings/ocr-fields", icon: Settings2 },
+// ];
 
 function NavLink({ href, icon: Icon, name, size = "md" }: { href: string; icon: React.ElementType; name: string; size?: "sm" | "md" }) {
   const pathname = usePathname();
@@ -115,7 +115,8 @@ export default function Sidebar() {
         </div>
         {mrzNav.map((item) => <NavLink key={item.href} {...item} />)}
 
-        {/* ── Google Cloud Vision OCR ── */}
+        {/* ── Google Cloud Vision OCR (ซ่อนไว้ — ไม่ได้ใช้งานแล้ว) ── */}
+        {/*
         <SectionLabel label="OCR (Google Cloud Vision)" />
         <div className="mx-3 mb-1 px-2 py-1 rounded bg-blue-500/10 border border-blue-500/20 flex items-center gap-1.5">
           <Cloud className="w-3 h-3 text-blue-400 shrink-0" />
@@ -123,6 +124,7 @@ export default function Sidebar() {
         </div>
         {ocrNav.map((item) => <NavLink key={item.href} {...item} />)}
         {isAdmin && ocrAdminNav.map((item) => <NavLink key={item.href} {...item} />)}
+        */}
 
         {/* ── แจ้งเตือน ── */}
         <SectionLabel label="แจ้งเตือน" />
@@ -156,11 +158,13 @@ export default function Sidebar() {
                 </p>
                 {mrzSettingsNav.map((item) => <NavLink key={item.href} {...item} size="sm" />)}
 
-                {/* OCR settings sub-group */}
+                {/* OCR settings sub-group (ซ่อนไว้ — ไม่ได้ใช้งานแล้ว) */}
+                {/*
                 <p className="px-3 pt-2 pb-0.5 text-[9px] font-bold uppercase tracking-widest text-blue-400/70 select-none flex items-center gap-1">
                   <Cloud className="w-3 h-3" /> Google Cloud Vision
                 </p>
                 {ocrSettingsNav.map((item) => <NavLink key={item.href} {...item} size="sm" />)}
+                */}
               </div>
             )}
           </div>

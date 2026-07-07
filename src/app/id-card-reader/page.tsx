@@ -371,7 +371,7 @@ export default function IdCardReaderPage() {
       const res = await apiFetch("/idcard", {
         method: "POST",
         body: JSON.stringify({
-          document_type: data.document_type,
+          document_type: data.doc_type_code || data.document_type,
           id_card: data.id_card || undefined,
           passport_no: data.passport_no || undefined,
           prefix: data.prefix,
@@ -1465,7 +1465,7 @@ export default function IdCardReaderPage() {
                   setSaving(true);
                   try {
                     const items = scannedRows.map((row) => ({
-                      document_type: row.document_type,
+                      document_type: row.doc_type_code || row.document_type,
                       id_card: row.id_card || undefined,
                       passport_no: row.passport_no || undefined,
                       prefix: row.prefix,
